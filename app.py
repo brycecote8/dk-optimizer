@@ -88,25 +88,46 @@ with st.sidebar:
         remember = st.checkbox("Remember this key on this computer",
                                value=bool(saved_key))
 
-        days = st.slider(
-            "Include games kicking off within (days)", 1, 10, 7,
-            help="A DraftKings week is ~7 days. Use 3 for just Thu/Sun-night "
-                 "games. Smaller window = fewer API credits used.",
-        )
-        st.caption(
-            f"Each game costs {len(vegas.ALL_MARKETS)} API credits. "
-            "A full 16-game week is about 96."
-        )
-
-        if st.button("🔄 Fetch Vegas projections", width='stretch'):
+        # Step 1: list the game days. Listing games is FREE — only pulling
+        # props costs credits — so always look before you spend.
+        if st.button("🔍 Check slates (free)", width='stretch'):
             if not api_key:
                 st.warning("Paste your free API key first.")
             else:
                 if remember:
                     keystore.save_key(api_key)
                 try:
+                    groups = vegas.group_by_gameday(vegas.fetch_events(api_key))
+                    st.session_state["gamedays"] = [
+                        {"label": lbl, "key": k, "events": evs}
+                        for lbl, k, evs in groups[:10]
+                    ]
+                except vegas.VegasError as e:
+                    st.error(str(e))
+
+        # Step 2: pick the exact slate you're playing, see the cost, then fetch.
+        gamedays = st.session_state.get("gamedays")
+        if gamedays:
+            labels = [g["label"] for g in gamedays]
+            # Default to the biggest slate (usually the Sunday main slate).
+            default = max(range(len(gamedays)),
+                          key=lambda i: len(gamedays[i]["events"]))
+            chosen = st.selectbox("Which slate are you playing?", labels,
+                                  index=default)
+            picked = next(g for g in gamedays if g["label"] == chosen)
+            cost = vegas.estimate_cost(len(picked["events"]))
+            st.info(f"Fetching this slate costs **{cost} credits**.")
+            with st.expander("Games in this slate"):
+                st.write("\n".join(
+                    f"- {e['away_team']} @ {e['home_team']}"
+                    for e in picked["events"]))
+
+            if st.button("🔄 Fetch Vegas projections", type="primary",
+                         width='stretch'):
+                try:
                     with st.spinner("Pulling betting lines from all books..."):
-                        rows, meta = vegas.fetch_projections(api_key, days=days)
+                        rows, meta = vegas.fetch_projections_for(
+                            api_key, picked["events"])
                     st.session_state["vegas_rows"] = rows
                     st.session_state["vegas_meta"] = meta
                 except vegas.VegasError as e:

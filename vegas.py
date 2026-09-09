@@ -268,3 +268,72 @@ def fetch_projections(api_key, markets=None, days=7, max_games=24):
         "truncated": truncated,
     }
     return rows, meta
+
+
+def group_by_gameday(events, now=None):
+    """
+    Group upcoming games by their Eastern-time calendar date — which is how
+    DraftKings slates actually work ("Sunday main slate", "Thursday night").
+
+    A plain "next N days" window is unreliable: run it Wednesday and "2 days"
+    misses Sunday entirely. Picking the real game day is unambiguous.
+
+    Returns a list of (label, date_key, [events]) sorted by date, e.g.
+        ("Sun Sep 13 — 13 games", "2026-09-13", [...])
+    """
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    eastern = ZoneInfo("America/New_York")
+    now = now or datetime.now(timezone.utc)
+
+    buckets = {}
+    for ev in events:
+        raw = ev.get("commence_time")
+        if not raw:
+            continue
+        try:
+            when = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if when < now:
+            continue                      # already kicked off
+        local = when.astimezone(eastern)
+        key = local.strftime("%Y-%m-%d")
+        buckets.setdefault(key, {"label_dt": local, "events": []})
+        buckets[key]["events"].append(ev)
+
+    out = []
+    for key in sorted(buckets):
+        b = buckets[key]
+        n = len(b["events"])
+        label = (f"{b['label_dt'].strftime('%a %b %d')} — "
+                 f"{n} game{'s' if n != 1 else ''}")
+        out.append((label, key, b["events"]))
+    return out
+
+
+def fetch_projections_for(api_key, events, markets=None):
+    """
+    Fetch props for an EXACT list of games (from group_by_gameday) and convert
+    them to projections. This is what the app uses once you've picked a slate,
+    so you only ever pay for the games you're actually playing.
+    """
+    if not events:
+        raise VegasError("No games selected.")
+
+    all_odds = []
+    remaining = None
+    for ev in events:
+        odds, remaining = fetch_event_odds(api_key, ev["id"], markets)
+        all_odds.append(odds)
+
+    rows = events_to_projections(all_odds)
+    meta = {
+        "games": len(events),
+        "players": len(rows),
+        "credits_remaining": remaining,
+        "credits_used": estimate_cost(len(events), markets),
+        "truncated": False,
+    }
+    return rows, meta

@@ -67,10 +67,26 @@ catches, touchdown odds) from all major books, averages them, and converts
 them to DraftKings points automatically. Defense (DST) has no betting lines,
 so it falls back to AvgPointsPerGame.
 
-> Note: the free key includes a monthly request budget. Each "Fetch" uses some
-> of it (a few refreshes per week is fine). The app shows your remaining
-> credits after each fetch. Player props appear once sportsbooks post them —
-> generally game week, not the deep offseason.
+### API credits (free tier = 500/month)
+
+Listing the slates is **free**. Only fetching props costs credits, at
+**6 credits per game**:
+
+| Slate | Games | Cost |
+|---|---|---|
+| Thursday night | 1 | 6 |
+| Sunday main slate | ~13 | ~78 |
+| Monday night | 1 | 6 |
+| **Per week (all three)** | | **~90** |
+| **Per month** | | **~390 of 500** ✅ |
+
+Fetching the *full week* three times a week instead costs ~1,240/month and
+will blow the budget in under two weeks. Always use **🔍 Check slates (free)**
+and pick the single slate you're actually playing — the app shows the exact
+cost before you spend anything.
+
+Re-generating lineups is free; it reuses the projections you already fetched.
+Only click Fetch again when lines have moved (e.g. injury news).
 
 ### Strategy controls (section 3 in the app)
 
