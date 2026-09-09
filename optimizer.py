@@ -210,3 +210,129 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
             usage[i] += 1
 
     return lineups
+
+
+# ---------------------------------------------------------------------------
+# Showdown / Captain Mode (single-game contests)
+# ---------------------------------------------------------------------------
+SHOWDOWN_ROSTER_SIZE = 6
+CAPTAIN_MULTIPLIER = 1.5
+
+
+def optimize_showdown(df, num_lineups=20, max_shared=4, max_exposure_pct=0.60,
+                      objective="mean", leverage_weight=0.0, verbose=True):
+    """
+    Build lineups for a DraftKings Showdown (single-game) contest.
+
+    Completely different rules from Classic:
+      - 6 players, not 9.
+      - Exactly 1 CAPTAIN, who scores 1.5x points but also COSTS 1.5x salary.
+      - The other 5 are FLEX and can be ANY position (QB/RB/WR/TE/K/DST).
+      - $50,000 cap.
+      - Must use players from BOTH teams.
+
+    Because the Captain both scores and costs 1.5x, choosing him is a real
+    trade-off — that's why this needs its own model rather than a tweak to the
+    Classic one.
+
+    Expects `df` to have a CptSalary column (see loader.prepare_showdown).
+    Returns a list of dicts: {"captain": idx, "flex": [idx, ...]}.
+    """
+    if "CptSalary" not in df.columns:
+        raise ValueError("Showdown needs a 'CptSalary' column "
+                         "(run loader.prepare_showdown first).")
+
+    players = list(df.index)
+    if len(players) < SHOWDOWN_ROSTER_SIZE:
+        raise InfeasibleError(
+            f"Need at least {SHOWDOWN_ROSTER_SIZE} players, got {len(players)}.")
+
+    salary = df["Salary"].to_dict()
+    cpt_salary = df["CptSalary"].to_dict()
+    team = df["TeamAbbrev"].to_dict()
+
+    score_col = "Ceiling" if objective == "ceiling" else "Projection"
+    if score_col not in df.columns:
+        raise ValueError(f"Need a '{score_col}' column for objective={objective!r}.")
+    score = df[score_col].to_dict()
+
+    if leverage_weight > 0:
+        if "Ownership" not in df.columns:
+            raise ValueError("Need an 'Ownership' column to apply leverage.")
+        own = df["Ownership"].to_dict()
+    else:
+        own = {i: 0.0 for i in players}
+
+    teams = sorted(set(team.values()))
+    if len(teams) < 2:
+        raise InfeasibleError(
+            "Showdown needs players from both teams, but this file only has "
+            f"one team ({teams[0] if teams else 'none'}).")
+
+    max_appearances = max(1, math.floor(max_exposure_pct * num_lineups))
+
+    lineups = []
+    usage = {i: 0 for i in players}
+
+    for k in range(num_lineups):
+        prob = pulp.LpProblem(f"showdown_{k}", pulp.LpMaximize)
+
+        # Two separate decisions per player: captain him, or flex him.
+        c = {i: pulp.LpVariable(f"c_{i}", cat="Binary") for i in players}
+        f = {i: pulp.LpVariable(f"f_{i}", cat="Binary") for i in players}
+
+        # Captain scores 1.5x; flex scores 1x. Leverage penalty applies to both.
+        prob += pulp.lpSum(
+            (CAPTAIN_MULTIPLIER * score[i] - leverage_weight * own[i]) * c[i]
+            + (score[i] - leverage_weight * own[i]) * f[i]
+            for i in players
+        )
+
+        prob += pulp.lpSum(c[i] for i in players) == 1
+        prob += pulp.lpSum(f[i] for i in players) == SHOWDOWN_ROSTER_SIZE - 1
+
+        # A player can't be both captain and flex.
+        for i in players:
+            prob += c[i] + f[i] <= 1
+
+        # Captain costs 1.5x salary.
+        prob += pulp.lpSum(cpt_salary[i] * c[i] + salary[i] * f[i]
+                           for i in players) <= SALARY_CAP
+
+        # Must use both teams: cap any single team at 5 of the 6 spots.
+        for t in teams:
+            prob += pulp.lpSum(c[i] + f[i] for i in players
+                               if team[i] == t) <= SHOWDOWN_ROSTER_SIZE - 1
+
+        # Exposure cap across the set of lineups.
+        for i in players:
+            if usage[i] >= max_appearances:
+                prob += c[i] + f[i] == 0
+
+        # Diversity: limit overlap with each previous lineup.
+        for prev in lineups:
+            prev_players = [prev["captain"]] + prev["flex"]
+            prob += pulp.lpSum(c[i] + f[i] for i in prev_players) <= max_shared
+
+        status = prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        if pulp.LpStatus[status] != "Optimal":
+            if verbose:
+                print(f"  Stopped after {len(lineups)} lineup(s).")
+            break
+
+        captain = [i for i in players if c[i].value() == 1][0]
+        flex = [i for i in players if f[i].value() == 1]
+        lineups.append({"captain": captain, "flex": flex})
+        for i in [captain] + flex:
+            usage[i] += 1
+
+    return lineups
+
+
+def showdown_totals(lineup, df, score_col="Projection"):
+    """Salary and points for one Showdown lineup, with the 1.5x captain bonus."""
+    cap, flex = lineup["captain"], lineup["flex"]
+    salary = int(df.loc[cap, "CptSalary"] + df.loc[flex, "Salary"].sum())
+    points = float(CAPTAIN_MULTIPLIER * df.loc[cap, score_col]
+                   + df.loc[flex, score_col].sum())
+    return salary, round(points, 1)

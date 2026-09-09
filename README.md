@@ -40,6 +40,28 @@ enter the one you like. No file upload needed.
 The **Download DraftKings upload CSV** button is for bulk entry (many lineups
 at once) — useful later for NBA.
 
+### Showdown / Captain Mode (single-game contests)
+
+DraftKings runs single-game slates (Thursday night, Monday night) as
+**Showdown**, which is a different game entirely:
+
+| | Classic | Showdown |
+|---|---|---|
+| Players | 9 | 6 |
+| Positions | 1 QB, 2 RB, 3 WR, 1 TE, 1 FLEX, 1 DST | 1 CPT + 5 FLEX (any position) |
+| Captain | — | scores **1.5x** points, costs **1.5x** salary |
+| Games | 2+ required | exactly 1, must use **both teams** |
+| Kickers | no | yes |
+
+The app **auto-detects** which one your salary file is (Showdown exports list
+every player twice, as CPT and FLEX, and cover one game). You can override it
+with the **Contest format** control under Strategy.
+
+Because the Captain costs 1.5x salary as well as scoring 1.5x, picking him is
+a real trade-off — the optimizer solves it rather than just captaining your
+highest-projected player. Stacking and bring-back don't apply in Showdown
+(there's only one game), but ceiling and leverage do.
+
 ### Auto-fetch Vegas projections (free)
 
 Instead of finding projections yourself, the app can build them from live

@@ -170,6 +170,12 @@ with st.sidebar:
     )
 
     st.header("3. Strategy")
+    contest_format = st.radio(
+        "Contest format",
+        ["Auto-detect", "Classic (full slate)", "Showdown (single game)"],
+        help="Classic = 9 players across many games. Showdown = 6 players from "
+             "ONE game with a 1.5x Captain. Auto-detect reads your salary file.",
+    )
     contest_type = st.radio(
         "Optimize for",
         ["Tournaments (upside)", "Cash games (safe)"],
@@ -260,11 +266,59 @@ def show_entry_card(lineup, df):
                       for slot, i in zip(SLOTS, ordered)), language="text")
 
 
+def sd_players(lu):
+    """All 6 player indexes of a Showdown lineup, captain first."""
+    return [lu["captain"]] + lu["flex"]
+
+
+def build_showdown_table(lineups, df):
+    """One row per Showdown lineup: captain, the 5 flex, salary and points."""
+    rows = []
+    for n, lu in enumerate(lineups, start=1):
+        sal, pts = optimizer.showdown_totals(lu, df)
+        row = {"Lineup": n, "CPT": df.loc[lu["captain"], "Name"]}
+        for j, i in enumerate(lu["flex"], start=1):
+            row[f"FLEX{j}"] = df.loc[i, "Name"]
+        row["Salary"] = sal
+        row["Proj"] = pts
+        if "Ownership" in df.columns:
+            row["Total Own%"] = round(
+                float(df.loc[sd_players(lu), "Ownership"].sum()), 1)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def show_showdown_card(lu, df):
+    """One Showdown lineup, laid out for typing into DraftKings."""
+    sal, pts = optimizer.showdown_totals(lu, df)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Projected points", pts)
+    c2.metric("Salary used", f"${sal:,}", f"${50000 - sal:,} left")
+    if "Ownership" in df.columns:
+        c3.metric("Total field ownership",
+                  f"{round(float(df.loc[sd_players(lu), 'Ownership'].sum()))}%")
+
+    cap = df.loc[lu["captain"]]
+    rows = ["| Slot | Player | Team | Salary | Proj |", "|---|---|---|---|---|",
+            f"| **CPT** | **{cap['Name']}** | {cap['TeamAbbrev']} | "
+            f"${int(cap['CptSalary']):,} | {round(cap['Projection'] * 1.5, 1)} (1.5x) |"]
+    for i in lu["flex"]:
+        r = df.loc[i]
+        rows.append(f"| FLEX | **{r['Name']}** | {r['TeamAbbrev']} | "
+                    f"${int(r['Salary']):,} | {r['Projection']} |")
+    st.markdown("\n".join(rows))
+
+    st.caption("Copy-friendly list:")
+    lines = [f"CPT: {cap['Name']}"] + [f"FLEX: {df.loc[i, 'Name']}" for i in lu["flex"]]
+    st.code("\n".join(lines), language="text")
+
+
 def build_exposure_table(lineups, df):
     """How often each player was used, as a count and a percentage."""
     counts = {}
     for lineup in lineups:
-        for i in lineup:
+        members = sd_players(lineup) if isinstance(lineup, dict) else lineup
+        for i in members:
             counts[i] = counts.get(i, 0) + 1
     total = len(lineups)
     rows = []
@@ -314,25 +368,51 @@ if generate:
             projections_input = SAMPLE_PROJECTIONS if use_sample_projections else None
 
         with st.spinner("Reading players and building lineups..."):
-            df = loader.load_salaries(salary_input)
+            raw = loader.load_salaries(salary_input)
+
+            # Showdown (single-game) files list every player twice and cover
+            # one game. They need a completely different optimizer.
+            if contest_format == "Auto-detect":
+                showdown = loader.is_showdown(raw)
+            else:
+                showdown = contest_format.startswith("Showdown")
+
+            if showdown:
+                df = loader.prepare_showdown(raw)
+            else:
+                df = raw
+
             df = loader.apply_projections(df, projections_input)
             df = metrics.enrich(df)   # add Ceiling + Ownership (or estimates)
-            lineups = optimizer.optimize(
-                df,
-                num_lineups=num_lineups,
-                max_shared=max_shared,
-                max_exposure_pct=max_exposure / 100.0,
-                objective=objective,
-                leverage_weight=leverage_weight,
-                stack_size=stack_size,
-                bring_back=bring_back,
-                verbose=False,
-            )
+
+            if showdown:
+                lineups = optimizer.optimize_showdown(
+                    df,
+                    num_lineups=num_lineups,
+                    max_shared=min(max_shared, 4),
+                    max_exposure_pct=max_exposure / 100.0,
+                    objective=objective,
+                    leverage_weight=leverage_weight,
+                    verbose=False,
+                )
+            else:
+                lineups = optimizer.optimize(
+                    df,
+                    num_lineups=num_lineups,
+                    max_shared=max_shared,
+                    max_exposure_pct=max_exposure / 100.0,
+                    objective=objective,
+                    leverage_weight=leverage_weight,
+                    stack_size=stack_size,
+                    bring_back=bring_back,
+                    verbose=False,
+                )
 
         # Save into session so results survive the download-button rerun.
         st.session_state["df"] = df
         st.session_state["lineups"] = lineups
         st.session_state["requested"] = num_lineups
+        st.session_state["showdown"] = showdown
 
     except optimizer.InfeasibleError as e:
         st.error(f"Couldn't build lineups: {e}")
@@ -354,13 +434,24 @@ if "lineups" in st.session_state:
         st.warning("No valid lineups could be built. Try loosening your rules.")
     else:
         # Top-line summary numbers.
+        showdown = st.session_state.get("showdown", False)
+        members = (lambda lu: sd_players(lu)) if showdown else (lambda lu: lu)
+
         c1, c2, c3 = st.columns(3)
         c1.metric("Lineups built", f"{len(lineups)}", f"of {requested} requested")
-        avg_proj = round(
-            sum(float(df.loc[lu, "Projection"].sum()) for lu in lineups) / len(lineups), 1)
+        if showdown:
+            avg_proj = round(sum(optimizer.showdown_totals(lu, df)[1]
+                                 for lu in lineups) / len(lineups), 1)
+        else:
+            avg_proj = round(sum(float(df.loc[lu, "Projection"].sum())
+                                 for lu in lineups) / len(lineups), 1)
         c2.metric("Avg projected points", avg_proj)
-        players_used = len({i for lu in lineups for i in lu})
+        players_used = len({i for lu in lineups for i in members(lu)})
         c3.metric("Unique players used", players_used)
+
+        st.caption("**Showdown / Captain Mode** — 6 players from one game."
+                   if showdown else
+                   "**Classic** — 9 players across the slate.")
 
         if len(lineups) < requested:
             st.info(
@@ -391,7 +482,8 @@ if "lineups" in st.session_state:
                     st.write(", ".join(missing[:60]))
 
         # The all-important download button (for bulk entry / NBA later).
-        csv_text = export.lineups_to_csv_string(lineups, df)
+        csv_text = (export.showdown_to_csv_string(lineups, df) if showdown
+                    else export.lineups_to_csv_string(lineups, df))
         st.download_button(
             "⬇️ Download DraftKings upload CSV",
             data=csv_text,
@@ -410,16 +502,22 @@ if "lineups" in st.session_state:
                     range(1, len(lineups) + 1),
                     format_func=lambda n: (
                         f"Lineup {n} — "
-                        f"{round(float(df.loc[lineups[n-1], 'Projection'].sum()), 1)} pts"
+                        + (f"{optimizer.showdown_totals(lineups[n-1], df)[1]} pts"
+                           if showdown else
+                           f"{round(float(df.loc[lineups[n-1], 'Projection'].sum()), 1)} pts")
                     ),
                 )
             else:
                 pick = 1
             st.caption("Type these into DraftKings, slot by slot.")
-            show_entry_card(lineups[pick - 1], df)
+            if showdown:
+                show_showdown_card(lineups[pick - 1], df)
+            else:
+                show_entry_card(lineups[pick - 1], df)
 
         with tab1:
-            table = build_lineup_table(lineups, df)
+            table = (build_showdown_table(lineups, df) if showdown
+                     else build_lineup_table(lineups, df))
             st.dataframe(table, width='stretch', hide_index=True)
 
         with tab2:

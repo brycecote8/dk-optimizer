@@ -75,3 +75,28 @@ def lineups_to_csv_string(lineups, df):
     buffer = io.StringIO()
     _write_rows(csv.writer(buffer), lineups, df)
     return buffer.getvalue()
+
+
+# DraftKings Showdown (single-game) upload columns.
+DK_SHOWDOWN_HEADER = ["CPT", "FLEX", "FLEX", "FLEX", "FLEX", "FLEX"]
+
+
+def _showdown_cell(row, as_captain=False):
+    """
+    Format one Showdown player. Captains have their OWN DraftKings ID, so the
+    upload file must use the captain ID in the CPT column.
+    """
+    pid = row["CptID"] if as_captain and "CptID" in row.index else row["ID"]
+    return f"{row['Name']} ({pid})"
+
+
+def showdown_to_csv_string(lineups, df):
+    """Showdown lineups as a DraftKings-format CSV string."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(DK_SHOWDOWN_HEADER)
+    for lu in lineups:
+        cells = [_showdown_cell(df.loc[lu["captain"]], as_captain=True)]
+        cells += [_showdown_cell(df.loc[i]) for i in lu["flex"]]
+        writer.writerow(cells)
+    return buffer.getvalue()

@@ -87,15 +87,69 @@ def load_salaries(csv_path):
         df["ID"] = ["NOID-" + str(i) for i in range(len(df))]
     df["ID"] = df["ID"].astype(str).str.strip()
 
-    # Keep only the valid DraftKings NFL positions.
-    valid = {"QB", "RB", "WR", "TE", "DST"}
+    # Keep only valid DraftKings NFL positions. Kickers only exist in
+    # Showdown (single-game) contests, never in Classic.
+    valid = {"QB", "RB", "WR", "TE", "DST", "K"}
     before = len(df)
     df = df[df["Position"].isin(valid)].reset_index(drop=True)
     dropped = before - len(df)
     if dropped:
         print(f"  (Ignored {dropped} row(s) with non-NFL positions.)")
 
+    # Normalize the Roster Position column if present (Showdown files use it
+    # to mark the CPT and FLEX copies of each player).
+    if "Roster Position" in df.columns:
+        df = df.rename(columns={"Roster Position": "RosterPosition"})
+    if "RosterPosition" in df.columns:
+        df["RosterPosition"] = (
+            df["RosterPosition"].astype(str).str.strip().str.upper())
+
     return df
+
+
+def is_showdown(df):
+    """
+    True if this looks like a DraftKings Showdown (single-game) salary file.
+
+    Showdown exports list every player twice — once as CPT and once as FLEX —
+    and cover exactly one game.
+    """
+    if "RosterPosition" in df.columns and (df["RosterPosition"] == "CPT").any():
+        return True
+    return df["GameInfo"].nunique() == 1
+
+
+def prepare_showdown(df):
+    """
+    Collapse a Showdown salary file to ONE row per player, with two salaries:
+
+        Salary     - the normal (FLEX) price
+        CptSalary  - the Captain price (1.5x, where a Captain scores 1.5x too)
+
+    Real DraftKings exports include both rows; if only one is present we derive
+    the Captain price the way DraftKings does, at 1.5x.
+    """
+    df = df.copy()
+
+    if "RosterPosition" in df.columns and (df["RosterPosition"] == "CPT").any():
+        flex = df[df["RosterPosition"] != "CPT"].copy()
+        cpt = df[df["RosterPosition"] == "CPT"].copy()
+        cpt_salary = dict(zip(cpt["Name"], cpt["Salary"]))
+        cpt_id = dict(zip(cpt["Name"], cpt["ID"]))
+        base = flex.reset_index(drop=True)
+        base["CptSalary"] = [
+            int(cpt_salary.get(n, round(s * 1.5)))
+            for n, s in zip(base["Name"], base["Salary"])
+        ]
+        # Captains have their own DraftKings ID — needed for the upload file.
+        base["CptID"] = [str(cpt_id.get(n, i))
+                         for n, i in zip(base["Name"], base["ID"])]
+    else:
+        base = df.reset_index(drop=True)
+        base["CptSalary"] = (base["Salary"] * 1.5).round().astype(int)
+        base["CptID"] = base["ID"]
+
+    return base
 
 
 def apply_projections(df, projections=None):
