@@ -50,9 +50,12 @@ One-time setup:
 2. In the app, choose **"Auto-fetch Vegas projections (free)"**.
 3. Upload your DraftKings salary CSV (still needed for salaries/positions).
 4. Paste your key, tick **Remember this key on this computer**, and click
-   **🔄 Fetch Vegas projections**.
-5. Check the **Preview the fetched projections** expander — the top names
-   should look like real stars. Then click **Generate Lineups**.
+   **🔍 Check slates (free)**.
+5. Pick the slate you're playing from the dropdown. The app shows exactly how
+   many credits that slate costs before you spend anything.
+6. Click **🔄 Fetch Vegas projections**, then check the **Preview the fetched
+   projections** expander — the top names should look like real stars.
+7. Click **Generate Lineups**.
 
 The saved key lives in a `.apikey` file in this folder, readable only by your
 user account and excluded from git. **Forget saved key** in the app deletes it.
