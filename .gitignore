@@ -1,0 +1,10 @@
+# Your saved odds-API key — never commit this.
+.apikey
+
+# Python virtual environment (re-created with requirements.txt)
+venv/
+__pycache__/
+*.pyc
+
+# Generated lineups
+output/

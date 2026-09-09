@@ -1,0 +1,212 @@
+"""
+optimizer.py
+------------
+The "brain". Given a table of players (with a Projection column), it builds
+lineups that score as high as possible while obeying all DraftKings rules.
+
+We use "PuLP", a library that solves this kind of "pick the best combination
+under these constraints" problem exactly (not by guessing).
+
+DraftKings NFL Classic roster (9 players):
+    1 QB, 2 RB, 3 WR, 1 TE, 1 FLEX (RB/WR/TE), 1 DST
+    - Salary cap: $50,000
+    - Max 8 players from the same team
+    - Players from at least 2 different games
+
+Diversity across the set of lineups:
+    - No two lineups share more than MAX_SHARED players (default 6)
+    - No single player appears in more than MAX_EXPOSURE of lineups (default 60%)
+"""
+
+import math
+import pulp
+
+# The exact roster slots DraftKings requires.
+ROSTER_SIZE = 9
+SALARY_CAP = 50000
+
+# Position rules. FLEX means "one extra RB, WR, or TE".
+# We express this as min/max counts per position:
+#   RB: at least 2, at most 3 (2 required + possible flex)
+#   WR: at least 3, at most 4
+#   TE: at least 1, at most 2
+POSITION_LIMITS = {
+    "QB": (1, 1),
+    "RB": (2, 3),
+    "WR": (3, 4),
+    "TE": (1, 2),
+    "DST": (1, 1),
+}
+
+
+class InfeasibleError(Exception):
+    """Raised when no valid lineup can be built (e.g. pool too small)."""
+
+
+def _build_opponent_map(df):
+    """
+    Work out who each team plays, from the GameInfo column.
+    DraftKings writes it like 'BUF@KC 09/08/2024 ...', meaning BUF plays KC.
+    Returns a dict: team -> opponent team.
+    """
+    opponents = {}
+    for gi in df["GameInfo"].unique():
+        matchup = str(gi).split(" ")[0]          # e.g. "BUF@KC"
+        if "@" in matchup:
+            away, home = matchup.split("@")[:2]
+            away, home = away.strip().upper(), home.strip().upper()
+            opponents[away] = home
+            opponents[home] = away
+    return opponents
+
+
+def _validate_pool(df):
+    """Make sure the player pool can even form one legal lineup."""
+    problems = []
+    for pos, (need_min, _) in POSITION_LIMITS.items():
+        have = (df["Position"] == pos).sum()
+        if have < need_min:
+            problems.append(f"need at least {need_min} {pos}, but only {have} in pool")
+    if problems:
+        raise InfeasibleError(
+            "The player pool is too small to build a lineup: "
+            + "; ".join(problems)
+        )
+
+
+def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
+             objective="mean", leverage_weight=0.0,
+             stack_size=0, bring_back=0, verbose=True):
+    """
+    Build up to `num_lineups` lineups.
+
+    New tournament options:
+      objective        - "mean" (average points, good for cash games) or
+                         "ceiling" (upside, good for tournaments).
+      leverage_weight  - how hard to fade popular players. 0 = ignore ownership.
+                         Higher = subtract more points for high ownership.
+      stack_size       - require the QB to be paired with at least this many of
+                         his OWN team's WR/TE (0 = no stack).
+      bring_back       - require this many players from the QB's OPPONENT
+                         (0 = no bring-back).
+
+    Returns a list of lineups. Each lineup is a list of row-index numbers that
+    point back into the `df` table (so you can look up name, salary, etc).
+    """
+    _validate_pool(df)
+
+    players = list(df.index)                 # the pool, by row number
+    salary = df["Salary"].to_dict()          # row number -> salary
+    pos = df["Position"].to_dict()           # row number -> position
+    team = df["TeamAbbrev"].to_dict()        # row number -> team
+    game = df["GameInfo"].to_dict()          # row number -> game
+
+    # Pick which number we're maximizing: average points or ceiling (upside).
+    score_col = "Ceiling" if objective == "ceiling" else "Projection"
+    if score_col not in df.columns:
+        raise ValueError(f"Need a '{score_col}' column for objective={objective!r}.")
+    score = df[score_col].to_dict()
+
+    # Ownership is only needed if we're applying leverage.
+    if leverage_weight > 0:
+        if "Ownership" not in df.columns:
+            raise ValueError("Need an 'Ownership' column to apply leverage.")
+        own = df["Ownership"].to_dict()
+    else:
+        own = {i: 0.0 for i in players}
+
+    teams = sorted(set(team.values()))
+    games = sorted(set(game.values()))
+    opponents = _build_opponent_map(df)
+
+    # A player may appear in at most this many lineups (the 60% exposure cap).
+    max_appearances = math.floor(max_exposure_pct * num_lineups)
+    if max_appearances < 1:
+        max_appearances = 1
+
+    lineups = []
+    usage = {i: 0 for i in players}          # how many lineups each player is in
+
+    for k in range(num_lineups):
+        prob = pulp.LpProblem(f"lineup_{k}", pulp.LpMaximize)
+
+        # Decision variables: x[i] = 1 if player i is in THIS lineup, else 0.
+        x = {i: pulp.LpVariable(f"x_{i}", cat="Binary") for i in players}
+
+        # Objective: maximize (score minus an ownership penalty for leverage).
+        prob += pulp.lpSum(
+            (score[i] - leverage_weight * own[i]) * x[i] for i in players
+        )
+
+        # Exactly 9 players.
+        prob += pulp.lpSum(x[i] for i in players) == ROSTER_SIZE
+
+        # Position minimums and maximums (this is what creates the FLEX).
+        for p, (pmin, pmax) in POSITION_LIMITS.items():
+            group = [x[i] for i in players if pos[i] == p]
+            prob += pulp.lpSum(group) >= pmin
+            prob += pulp.lpSum(group) <= pmax
+
+        # Salary cap.
+        prob += pulp.lpSum(salary[i] * x[i] for i in players) <= SALARY_CAP
+
+        # Max 8 players from any one team.
+        for t in teams:
+            group = [x[i] for i in players if team[i] == t]
+            prob += pulp.lpSum(group) <= 8
+
+        # At least 2 different games: cap any single game at 8 players, so all
+        # 9 can never come from one game.
+        for g in games:
+            group = [x[i] for i in players if game[i] == g]
+            prob += pulp.lpSum(group) <= 8
+
+        # Stacking: if we pick a team's QB, force at least `stack_size` of that
+        # same team's WR/TE into the lineup (QB + his pass-catchers).
+        if stack_size > 0:
+            for t in teams:
+                qb_here = [x[i] for i in players if team[i] == t and pos[i] == "QB"]
+                if not qb_here:
+                    continue
+                catchers = [x[i] for i in players
+                            if team[i] == t and pos[i] in ("WR", "TE")]
+                # If the QB is chosen (sum == 1), require >= stack_size catchers.
+                prob += pulp.lpSum(catchers) >= stack_size * pulp.lpSum(qb_here)
+
+        # Bring-back: if we pick a team's QB, force `bring_back` offensive
+        # players from the OPPONENT's team (a player from the other side of the
+        # same game, which pays off in shootouts).
+        if bring_back > 0:
+            for t in teams:
+                qb_here = [x[i] for i in players if team[i] == t and pos[i] == "QB"]
+                opp = opponents.get(t)
+                if not qb_here or opp is None:
+                    continue
+                opp_players = [x[i] for i in players
+                               if team[i] == opp and pos[i] in ("RB", "WR", "TE")]
+                prob += pulp.lpSum(opp_players) >= bring_back * pulp.lpSum(qb_here)
+
+        # Exposure cap: if a player already hit the appearance limit, forbid it.
+        for i in players:
+            if usage[i] >= max_appearances:
+                prob += x[i] == 0
+
+        # Diversity: overlap with each previous lineup must be <= max_shared.
+        for prev in lineups:
+            prob += pulp.lpSum(x[i] for i in prev) <= max_shared
+
+        # Solve quietly.
+        status = prob.solve(pulp.PULP_CBC_CMD(msg=False))
+
+        if pulp.LpStatus[status] != "Optimal":
+            if verbose:
+                print(f"  Stopped after {len(lineups)} lineup(s): no more "
+                      f"lineups satisfy all the diversity rules.")
+            break
+
+        chosen = [i for i in players if x[i].value() == 1]
+        lineups.append(chosen)
+        for i in chosen:
+            usage[i] += 1
+
+    return lineups
