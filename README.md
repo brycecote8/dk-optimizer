@@ -113,6 +113,36 @@ cost before you spend anything.
 Re-generating lineups is free; it reuses the projections you already fetched.
 Only click Fetch again when lines have moved (e.g. injury news).
 
+### Tracking your results (📈 My results tab)
+
+Theory can't tell you whether your settings are good — only measurement can.
+After you enter a lineup on DraftKings, click **💾 Save this lineup to my
+results**. It records the lineup *and the settings that built it* (ceiling vs
+mean, leverage, stack, bring-back).
+
+Once the games finish, open the **📈 My results** tab and enter the actual
+score (plus entry fee and winnings if you want profit tracked). The summary
+table then groups every scored lineup by its settings, so you can see which
+combination is genuinely working for you.
+
+Everything lives in `results/history.csv` — a plain spreadsheet you can open
+in Excel. It is git-ignored, so your personal record never leaves your Mac.
+
+> Give it several weeks. Five lineups is noise; a month of Sundays starts to
+> be signal.
+
+### When to fetch projections
+
+Fetch **once, late** — about an hour before kickoff. NFL inactives are
+announced 90 minutes before the first game, which is the biggest information
+event of the week. Before that you're guessing about questionable players;
+after it, the betting lines have absorbed the news. For a 1:00pm ET Sunday
+slate, fetch between **11:30am and 12:30pm ET**.
+
+When a player is ruled out, sportsbooks pull his props entirely. The app uses
+that as the signal to drop him from the pool (see "Drop players with no Vegas
+line"), which is why fetching after inactives matters so much.
+
 ### Strategy controls (section 3 in the app)
 
 These are what make lineups better than a basic free optimizer:

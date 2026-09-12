@@ -25,6 +25,7 @@ import keystore
 import metrics
 import optimizer
 import export
+import results
 import vegas
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -322,6 +323,49 @@ def show_showdown_card(lu, df):
     st.code("\n".join(lines), language="text")
 
 
+def render_results_tab():
+    """Your saved lineups: enter what they actually scored, see what works."""
+    history = results.load_history()
+    if not history:
+        st.info("No saved lineups yet. Save one from the **🎯 Entry card** tab "
+                "after you enter it on DraftKings.")
+        return
+
+    st.subheader("Enter what a lineup actually scored")
+    unscored = [r for r in history if not r.get("actual")]
+    target = unscored or history
+    choice = st.selectbox(
+        "Which entry?",
+        [r["id"] for r in target],
+        format_func=lambda i: next(
+            f"#{r['id']} — {r['slate'] or r['saved_at']} "
+            f"(projected {r['projected']})" for r in target if r["id"] == i),
+    )
+    c1, c2, c3 = st.columns(3)
+    actual = c1.number_input("Actual score", min_value=0.0, step=0.1)
+    fee = c2.number_input("Entry fee ($)", min_value=0.0, step=1.0)
+    won = c3.number_input("Winnings ($)", min_value=0.0, step=1.0)
+    if st.button("Save score"):
+        results.update_entry(choice, actual=actual, entry_fee=fee, winnings=won)
+        st.success(f"Recorded for entry #{choice}.")
+        st.rerun()
+
+    st.divider()
+    st.subheader("Which settings are actually working?")
+    summary = results.summary_by_settings()
+    if summary:
+        st.dataframe(pd.DataFrame(summary), width='stretch', hide_index=True)
+        st.caption("'Beat projection by' shows whether your lineups outscored "
+                   "what the model expected. Give it several weeks — a handful "
+                   "of lineups is noise, not signal.")
+    else:
+        st.info("Enter a few real scores above and this table will fill in.")
+
+    st.divider()
+    st.subheader("All saved lineups")
+    st.dataframe(pd.DataFrame(history), width='stretch', hide_index=True)
+
+
 def build_exposure_table(lineups, df):
     """How often each player was used, as a count and a percentage."""
     counts = {}
@@ -423,6 +467,10 @@ if generate:
         st.session_state["lineups"] = lineups
         st.session_state["requested"] = num_lineups
         st.session_state["showdown"] = showdown
+        st.session_state["settings"] = {
+            "objective": objective, "leverage": leverage,
+            "stack": stack_size, "bring_back": bring_back,
+        }
 
     except optimizer.InfeasibleError as e:
         st.error(f"Couldn't build lineups: {e}")
@@ -508,8 +556,9 @@ if "lineups" in st.session_state:
         )
 
         # Entry card first: it's what you need for single-entry contests.
-        tab0, tab1, tab2 = st.tabs(
-            ["🎯 Entry card", "📋 All lineups", "📊 Player exposure"])
+        tab0, tab1, tab2, tab3 = st.tabs(
+            ["🎯 Entry card", "📋 All lineups", "📊 Player exposure",
+             "📈 My results"])
 
         with tab0:
             if len(lineups) > 1:
@@ -526,10 +575,36 @@ if "lineups" in st.session_state:
             else:
                 pick = 1
             st.caption("Type these into DraftKings, slot by slot.")
+            lu = lineups[pick - 1]
             if showdown:
-                show_showdown_card(lineups[pick - 1], df)
+                show_showdown_card(lu, df)
             else:
-                show_entry_card(lineups[pick - 1], df)
+                show_entry_card(lu, df)
+
+            # Record what you actually entered, so you can measure later.
+            st.divider()
+            slate_label = st.text_input(
+                "Slate name (for your records)",
+                value=str(df["GameInfo"].iloc[0]).split(" ")[0] if len(df) else "",
+            )
+            if st.button("💾 Save this lineup to my results"):
+                if showdown:
+                    ordered = [lu["captain"]] + lu["flex"]
+                    sal, proj = optimizer.showdown_totals(lu, df)
+                else:
+                    ordered = export.assign_slots(lu, df)
+                    sal = int(df.loc[lu, "Salary"].sum())
+                    proj = round(float(df.loc[lu, "Projection"].sum()), 1)
+                own = (round(float(df.loc[ordered, "Ownership"].sum()), 1)
+                       if "Ownership" in df.columns else "")
+                eid = results.save_lineup(
+                    [df.loc[i, "Name"] for i in ordered], sal, proj, own,
+                    st.session_state.get("settings", {}),
+                    slate=slate_label,
+                    fmt="showdown" if showdown else "classic",
+                )
+                st.success(f"Saved as entry #{eid}. Add the real score in "
+                           "the **📈 My results** tab after the games.")
 
         with tab1:
             table = (build_showdown_table(lineups, df) if showdown
@@ -546,5 +621,8 @@ if "lineups" in st.session_state:
                     )
                 },
             )
+
+        with tab3:
+            render_results_tab()
 else:
     st.info("👈 Set your options in the sidebar, then click **Generate Lineups**.")
