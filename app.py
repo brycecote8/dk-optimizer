@@ -60,6 +60,7 @@ with st.sidebar:
     salary_file = None
     projections_file = None
     api_key = None
+    drop_inactive = False
 
     if source == "Upload my own files":
         salary_file = st.file_uploader(
@@ -137,6 +138,14 @@ with st.sidebar:
         if saved_key and st.button("Forget saved key", width='stretch'):
             keystore.forget_key()
             st.rerun()
+
+        drop_inactive = st.checkbox(
+            "Drop players with no Vegas line (recommended)", value=True,
+            help="Sportsbooks pull a player's props when he's ruled OUT. "
+                 "Without this, an inactive star falls back to his season "
+                 "average and can get rostered, scoring zero. Defenses are "
+                 "always kept — they never have betting lines.",
+        )
 
         meta = st.session_state.get("vegas_meta")
         if "vegas_rows" in st.session_state and meta:
@@ -382,7 +391,8 @@ if generate:
             else:
                 df = raw
 
-            df = loader.apply_projections(df, projections_input)
+            df = loader.apply_projections(df, projections_input,
+                                          drop_unmatched=drop_inactive)
             df = metrics.enrich(df)   # add Ceiling + Ownership (or estimates)
 
             if showdown:
@@ -470,7 +480,13 @@ if "lineups" in st.session_state:
                    "(normal — defenses have no betting lines)."
                    if stats["unmatched_dst"] else "")
             )
-            if missing:
+            if stats.get("dropped"):
+                st.warning(
+                    f"Removed {len(stats['dropped'])} player(s) with no Vegas "
+                    "line — likely inactive. They can't be rostered.")
+                with st.expander("Who was removed"):
+                    st.write(", ".join(stats["dropped"][:60]))
+            elif missing:
                 with st.expander(
                         f"⚠️ {len(missing)} players fell back to DraftKings "
                         "averages — click to see who"):

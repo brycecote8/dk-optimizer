@@ -152,7 +152,7 @@ def prepare_showdown(df):
     return base
 
 
-def apply_projections(df, projections=None):
+def apply_projections(df, projections=None, drop_unmatched=False):
     """
     Add a 'Projection' column to the players table.
 
@@ -164,6 +164,13 @@ def apply_projections(df, projections=None):
 
     Players are matched by name (forgiving of punctuation/suffixes). Anyone not
     found falls back to AvgPointsPerGame so no one is left at zero by accident.
+
+    `drop_unmatched` matters a lot with Vegas projections. When a player is
+    ruled OUT, sportsbooks PULL his props entirely — so "no Vegas line" is a
+    strong signal he is not playing. Falling back to his season average would
+    make an inactive star look like a great value and get him rostered, where
+    he scores zero. With drop_unmatched=True those players are removed from
+    the pool instead. Defenses are always kept, since they never have props.
     """
     df = df.copy()
 
@@ -219,13 +226,25 @@ def apply_projections(df, projections=None):
     # separately because defenses never have betting props — falling back for
     # them is expected, not a problem.
     unmatched = df[df["ProjectionSource"] != "Imported projection"]
-    df.attrs["match_stats"] = {
+    unmatched_names = unmatched.loc[
+        unmatched["Position"] != "DST", "Name"].tolist()
+    stats = {
         "matched": matched,
         "total": len(df),
-        "unmatched_names": unmatched.loc[
-            unmatched["Position"] != "DST", "Name"].tolist(),
+        "unmatched_names": unmatched_names,
         "unmatched_dst": int((unmatched["Position"] == "DST").sum()),
+        "dropped": [],
     }
+
+    if drop_unmatched and unmatched_names:
+        # Keep defenses (never have props); drop everyone else with no line.
+        keep = (df["ProjectionSource"] == "Imported projection") | (df["Position"] == "DST")
+        stats["dropped"] = unmatched_names
+        df = df[keep].reset_index(drop=True)
+        print(f"  Dropped {len(unmatched_names)} player(s) with no projection "
+              "(likely inactive).")
+
+    df.attrs["match_stats"] = stats
 
     # Optional bonus columns: if the projections file also has Ceiling or
     # Ownership, carry them over (matched by Name). Anything not provided is
