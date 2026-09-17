@@ -76,7 +76,8 @@ def _validate_pool(df):
 
 def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
              objective="mean", leverage_weight=0.0,
-             stack_size=0, bring_back=0, verbose=True):
+             stack_size=0, bring_back=0, verbose=True,
+             leverage_budget=0.0):
     """
     Build up to `num_lineups` lineups.
 
@@ -89,6 +90,11 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
                          his OWN team's WR/TE (0 = no stack).
       bring_back       - require this many players from the QB's OPPONENT
                          (0 = no bring-back).
+      leverage_budget  - how many projected points you'll give up to be
+                         different. The optimizer finds the best lineup, then
+                         the LEAST-OWNED lineup within this many points of it.
+                         0 = just take the best lineup. Unlike leverage_weight,
+                         every step of this has a predictable effect.
 
     Returns a list of lineups. Each lineup is a list of row-index numbers that
     point back into the `df` table (so you can look up name, salary, etc).
@@ -108,7 +114,7 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
     score = df[score_col].to_dict()
 
     # Ownership is only needed if we're applying leverage.
-    if leverage_weight > 0:
+    if leverage_weight > 0 or leverage_budget > 0:
         if "Ownership" not in df.columns:
             raise ValueError("Need an 'Ownership' column to apply leverage.")
         own = df["Ownership"].to_dict()
@@ -127,16 +133,10 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
     lineups = []
     usage = {i: 0 for i in players}          # how many lineups each player is in
 
-    for k in range(num_lineups):
-        prob = pulp.LpProblem(f"lineup_{k}", pulp.LpMaximize)
-
-        # Decision variables: x[i] = 1 if player i is in THIS lineup, else 0.
+    def build(name, sense):
+        """A problem with every roster rule in place, but no objective yet."""
+        prob = pulp.LpProblem(name, sense)
         x = {i: pulp.LpVariable(f"x_{i}", cat="Binary") for i in players}
-
-        # Objective: maximize (score minus an ownership penalty for leverage).
-        prob += pulp.lpSum(
-            (score[i] - leverage_weight * own[i]) * x[i] for i in players
-        )
 
         # Exactly 9 players.
         prob += pulp.lpSum(x[i] for i in players) == ROSTER_SIZE
@@ -152,14 +152,12 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
 
         # Max 8 players from any one team.
         for t in teams:
-            group = [x[i] for i in players if team[i] == t]
-            prob += pulp.lpSum(group) <= 8
+            prob += pulp.lpSum(x[i] for i in players if team[i] == t) <= 8
 
         # At least 2 different games: cap any single game at 8 players, so all
         # 9 can never come from one game.
         for g in games:
-            group = [x[i] for i in players if game[i] == g]
-            prob += pulp.lpSum(group) <= 8
+            prob += pulp.lpSum(x[i] for i in players if game[i] == g) <= 8
 
         # Stacking: if we pick a team's QB, force at least `stack_size` of that
         # same team's WR/TE into the lineup (QB + his pass-catchers).
@@ -170,12 +168,10 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
                     continue
                 catchers = [x[i] for i in players
                             if team[i] == t and pos[i] in ("WR", "TE")]
-                # If the QB is chosen (sum == 1), require >= stack_size catchers.
                 prob += pulp.lpSum(catchers) >= stack_size * pulp.lpSum(qb_here)
 
         # Bring-back: if we pick a team's QB, force `bring_back` offensive
-        # players from the OPPONENT's team (a player from the other side of the
-        # same game, which pays off in shootouts).
+        # players from the OPPONENT's team.
         if bring_back > 0:
             for t in teams:
                 qb_here = [x[i] for i in players if team[i] == t and pos[i] == "QB"]
@@ -195,16 +191,37 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
         for prev in lineups:
             prob += pulp.lpSum(x[i] for i in prev) <= max_shared
 
-        # Solve quietly.
-        status = prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        return prob, x
 
+    solver = pulp.PULP_CBC_CMD(msg=False)
+
+    for k in range(num_lineups):
+        # Stage 1: the best lineup available under every rule.
+        prob, x = build(f"best_{k}", pulp.LpMaximize)
+        prob += pulp.lpSum(
+            (score[i] - leverage_weight * own[i]) * x[i] for i in players
+        )
+        status = prob.solve(solver)
         if pulp.LpStatus[status] != "Optimal":
             if verbose:
                 print(f"  Stopped after {len(lineups)} lineup(s): no more "
                       f"lineups satisfy all the diversity rules.")
             break
+        chosen = [i for i in players if x[i].value() > 0.5]
 
-        chosen = [i for i in players if x[i].value() == 1]
+        # Stage 2 (leverage): the least-owned lineup that stays within
+        # `leverage_budget` points of that best one.
+        if leverage_budget > 0:
+            best = sum(score[i] for i in chosen)
+            prob2, y = build(f"lev_{k}", pulp.LpMinimize)
+            prob2 += (pulp.lpSum(score[i] * y[i] for i in players)
+                      >= best - leverage_budget)
+            # Tiny tie-breaker so equal-ownership options prefer more points.
+            prob2 += pulp.lpSum((own[i] - 0.001 * score[i]) * y[i]
+                                for i in players)
+            if pulp.LpStatus[prob2.solve(solver)] == "Optimal":
+                chosen = [i for i in players if y[i].value() > 0.5]
+
         lineups.append(chosen)
         for i in chosen:
             usage[i] += 1
@@ -220,7 +237,8 @@ CAPTAIN_MULTIPLIER = 1.5
 
 
 def optimize_showdown(df, num_lineups=20, max_shared=4, max_exposure_pct=0.60,
-                      objective="mean", leverage_weight=0.0, verbose=True):
+                      objective="mean", leverage_weight=0.0, verbose=True,
+                      leverage_budget=0.0):
     """
     Build lineups for a DraftKings Showdown (single-game) contest.
 
@@ -256,7 +274,7 @@ def optimize_showdown(df, num_lineups=20, max_shared=4, max_exposure_pct=0.60,
         raise ValueError(f"Need a '{score_col}' column for objective={objective!r}.")
     score = df[score_col].to_dict()
 
-    if leverage_weight > 0:
+    if leverage_weight > 0 or leverage_budget > 0:
         if "Ownership" not in df.columns:
             raise ValueError("Need an 'Ownership' column to apply leverage.")
         own = df["Ownership"].to_dict()
@@ -274,19 +292,12 @@ def optimize_showdown(df, num_lineups=20, max_shared=4, max_exposure_pct=0.60,
     lineups = []
     usage = {i: 0 for i in players}
 
-    for k in range(num_lineups):
-        prob = pulp.LpProblem(f"showdown_{k}", pulp.LpMaximize)
-
+    def build(name, sense):
+        """Every Showdown rule in place, no objective yet."""
+        prob = pulp.LpProblem(name, sense)
         # Two separate decisions per player: captain him, or flex him.
         c = {i: pulp.LpVariable(f"c_{i}", cat="Binary") for i in players}
         f = {i: pulp.LpVariable(f"f_{i}", cat="Binary") for i in players}
-
-        # Captain scores 1.5x; flex scores 1x. Leverage penalty applies to both.
-        prob += pulp.lpSum(
-            (CAPTAIN_MULTIPLIER * score[i] - leverage_weight * own[i]) * c[i]
-            + (score[i] - leverage_weight * own[i]) * f[i]
-            for i in players
-        )
 
         prob += pulp.lpSum(c[i] for i in players) == 1
         prob += pulp.lpSum(f[i] for i in players) == SHOWDOWN_ROSTER_SIZE - 1
@@ -304,24 +315,51 @@ def optimize_showdown(df, num_lineups=20, max_shared=4, max_exposure_pct=0.60,
             prob += pulp.lpSum(c[i] + f[i] for i in players
                                if team[i] == t) <= SHOWDOWN_ROSTER_SIZE - 1
 
-        # Exposure cap across the set of lineups.
         for i in players:
             if usage[i] >= max_appearances:
                 prob += c[i] + f[i] == 0
 
-        # Diversity: limit overlap with each previous lineup.
         for prev in lineups:
             prev_players = [prev["captain"]] + prev["flex"]
             prob += pulp.lpSum(c[i] + f[i] for i in prev_players) <= max_shared
 
-        status = prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        return prob, c, f
+
+    def points(c, f):
+        return pulp.lpSum(CAPTAIN_MULTIPLIER * score[i] * c[i] + score[i] * f[i]
+                          for i in players)
+
+    solver = pulp.PULP_CBC_CMD(msg=False)
+
+    for k in range(num_lineups):
+        prob, c, f = build(f"showdown_{k}", pulp.LpMaximize)
+        # Captain scores 1.5x; flex 1x. Legacy leverage penalty applies to both.
+        prob += pulp.lpSum(
+            (CAPTAIN_MULTIPLIER * score[i] - leverage_weight * own[i]) * c[i]
+            + (score[i] - leverage_weight * own[i]) * f[i]
+            for i in players
+        )
+        status = prob.solve(solver)
         if pulp.LpStatus[status] != "Optimal":
             if verbose:
                 print(f"  Stopped after {len(lineups)} lineup(s).")
             break
 
-        captain = [i for i in players if c[i].value() == 1][0]
-        flex = [i for i in players if f[i].value() == 1]
+        captain = [i for i in players if c[i].value() > 0.5][0]
+        flex = [i for i in players if f[i].value() > 0.5]
+
+        # Leverage: least-owned lineup within `leverage_budget` points.
+        if leverage_budget > 0:
+            best = (CAPTAIN_MULTIPLIER * score[captain]
+                    + sum(score[i] for i in flex))
+            prob2, c2, f2 = build(f"sd_lev_{k}", pulp.LpMinimize)
+            prob2 += points(c2, f2) >= best - leverage_budget
+            prob2 += pulp.lpSum((own[i] - 0.001 * score[i]) * (c2[i] + f2[i])
+                                for i in players)
+            if pulp.LpStatus[prob2.solve(solver)] == "Optimal":
+                captain = [i for i in players if c2[i].value() > 0.5][0]
+                flex = [i for i in players if f2[i].value() > 0.5]
+
         lineups.append({"captain": captain, "flex": flex})
         for i in [captain] + flex:
             usage[i] += 1

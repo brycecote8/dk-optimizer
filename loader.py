@@ -107,6 +107,27 @@ def load_salaries(csv_path):
     return df
 
 
+# DraftKings injury statuses that mean the player will not play. "Q"
+# (questionable) is deliberately NOT here — most questionable players suit up.
+NOT_PLAYING = {"OUT", "O", "IR", "D", "DOUBTFUL", "PUP", "NA", "SUSP", "SUS", "NFI"}
+
+
+def drop_injured(df):
+    """
+    Remove players DraftKings itself marks as not playing.
+
+    Real DraftKings exports carry a Status column (OUT, IR, Q, ...). It is the
+    most direct injury signal we have — far more reliable than inferring an
+    injury from a missing betting line. Returns (clean_df, dropped_names).
+    """
+    if "Status" not in df.columns:
+        return df, []
+    status = df["Status"].fillna("").astype(str).str.strip().str.upper()
+    out = status.isin(NOT_PLAYING)
+    dropped = df.loc[out, "Name"].tolist()
+    return df[~out].reset_index(drop=True), dropped
+
+
 def is_showdown(df):
     """
     True if this looks like a DraftKings Showdown (single-game) salary file.

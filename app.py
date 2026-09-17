@@ -195,12 +195,11 @@ with st.sidebar:
     objective = "ceiling" if contest_type.startswith("Tournaments") else "mean"
 
     leverage = st.slider(
-        "Leverage — fade popular players", 0, 10, 0,
-        help="0 = ignore ownership (chase points). Higher = avoid the crowd's "
-             "popular picks to stand out in tournaments.",
+        "Leverage — projected points to give up for uniqueness", 0, 20, 0,
+        help="The optimizer finds the best lineup, then the least-popular "
+             "lineup within this many points of it. 0 = just the best lineup. "
+             "Cash games: 0. Small tournaments: 3–6. Big tournaments: 8–15.",
     )
-    # Turn the 0-10 dial into the penalty the optimizer uses.
-    leverage_weight = leverage * 0.03
 
     stack_size = st.slider(
         "Stack: QB + this many of his own WR/TE", 0, 3, 0,
@@ -422,6 +421,9 @@ if generate:
 
         with st.spinner("Reading players and building lineups..."):
             raw = loader.load_salaries(salary_input)
+            # DraftKings marks injured/inactive players directly. Always honor it.
+            raw, injured = loader.drop_injured(raw)
+            st.session_state["injured"] = injured
 
             # Showdown (single-game) files list every player twice and cover
             # one game. They need a completely different optimizer.
@@ -446,7 +448,7 @@ if generate:
                     max_shared=min(max_shared, 4),
                     max_exposure_pct=max_exposure / 100.0,
                     objective=objective,
-                    leverage_weight=leverage_weight,
+                    leverage_budget=leverage,
                     verbose=False,
                 )
             else:
@@ -456,7 +458,7 @@ if generate:
                     max_shared=max_shared,
                     max_exposure_pct=max_exposure / 100.0,
                     objective=objective,
-                    leverage_weight=leverage_weight,
+                    leverage_budget=leverage,
                     stack_size=stack_size,
                     bring_back=bring_back,
                     verbose=False,
@@ -516,6 +518,11 @@ if "lineups" in st.session_state:
                 f"Built {len(lineups)} of {requested}. The diversity rules ran "
                 "out of room — loosen 'max shared' or raise 'max exposure' for more."
             )
+
+        injured = st.session_state.get("injured") or []
+        if injured:
+            st.caption(f"Removed {len(injured)} players DraftKings lists as "
+                       "OUT / IR / Doubtful.")
 
         # Warn if players didn't get real projections (usually a name mismatch).
         stats = df.attrs.get("match_stats")

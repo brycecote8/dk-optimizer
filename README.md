@@ -143,14 +143,22 @@ When a player is ruled out, sportsbooks pull his props entirely. The app uses
 that as the signal to drop him from the pool (see "Drop players with no Vegas
 line"), which is why fetching after inactives matters so much.
 
+### Injured players
+
+Real DraftKings salary files include a `Status` column. The app always removes
+players DraftKings marks OUT, IR, Doubtful, or suspended before optimizing.
+Questionable (Q) players are kept, since most of them play.
+
 ### Strategy controls (section 3 in the app)
 
 These are what make lineups better than a basic free optimizer:
 
 - **Optimize for** — *Tournaments* uses each player's ceiling (upside);
   *Cash games* uses average points.
-- **Leverage** — how hard to fade popular (high-ownership) players. 0 chases
-  raw points; higher makes contrarian lineups that stand out in tournaments.
+- **Leverage** — how many projected points you'll give up to be different.
+  The optimizer finds the best lineup, then the least-popular lineup within
+  that many points of it. Cash games: 0. Small tournaments: 3–6. Big
+  tournaments: 8–15.
 - **Stack** — pairs your QB with his own WR/TE (correlation = upside).
 - **Bring-back** — adds a player from the opposing team in your QB's game.
 
