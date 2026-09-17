@@ -111,11 +111,11 @@ with st.sidebar:
         gamedays = st.session_state.get("gamedays")
         if gamedays:
             labels = [g["label"] for g in gamedays]
-            # Default to the biggest slate (usually the Sunday main slate).
-            default = max(range(len(gamedays)),
-                          key=lambda i: len(gamedays[i]["events"]))
+            # Default to the soonest slate — that's the one you're about to
+            # play. (Defaulting to the biggest one once meant Sunday was
+            # preselected on a Thursday night.)
             chosen = st.selectbox("Which slate are you playing?", labels,
-                                  index=default)
+                                  index=0)
             picked = next(g for g in gamedays if g["label"] == chosen)
             cost = vegas.estimate_cost(len(picked["events"])) + 2
             st.info(f"Fetching this slate costs **{cost} credits**.")
@@ -559,8 +559,8 @@ if "lineups" in st.session_state:
             st.caption(
                 f"Projections matched {stats['matched']} of {stats['total']} "
                 f"players."
-                + (f" {stats['unmatched_dst']} defenses used DraftKings averages "
-                   "(normal — defenses have no betting lines)."
+                + (f" {stats['unmatched_dst']} defenses/kickers have no player "
+                   "props; they're projected from the game line instead."
                    if stats["unmatched_dst"] else "")
             )
             if stats.get("dropped"):

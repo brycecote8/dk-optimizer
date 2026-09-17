@@ -450,20 +450,34 @@ def dst_projection(opp_implied):
     return round(expected_tier + max(events, 1.5), 2)
 
 
+def kicker_projection(team_implied):
+    """
+    Expected DraftKings points for a kicker, from his own team's Vegas total.
+    More expected points means more extra points and field-goal tries; a
+    typical kicker lands around 7-9.
+    """
+    return round(1.5 + 0.28 * team_implied, 2)
+
+
 def apply_dst_projections(df, lines):
     """
-    Replace each defense's projection with one based on its opponent's
-    Vegas team total. Defenses have no player props, so without this they
-    fall back to last season's average and ignore the matchup entirely.
+    Project defenses and kickers from Vegas team totals. Neither has player
+    props, so without this they fall back to last season's average and ignore
+    the matchup entirely. Defenses use the OPPONENT's expected points; kickers
+    use their own team's.
     """
     if not lines or "Position" not in df.columns:
         return df
     df = df.copy()
-    for i in df.index[df["Position"] == "DST"]:
+    for i in df.index[df["Position"].isin(["DST", "K"])]:
         abbr = str(df.at[i, "TeamAbbrev"]).upper()
         info = lines.get(ABBR_ALIASES.get(abbr, abbr))
-        if info:
+        if not info:
+            continue
+        if df.at[i, "Position"] == "DST":
             df.at[i, "Projection"] = dst_projection(info["opp_implied"])
             df.at[i, "ProjectionSource"] = "Vegas game line (DST)"
+        else:
+            df.at[i, "Projection"] = kicker_projection(info["implied"])
+            df.at[i, "ProjectionSource"] = "Vegas game line (K)"
     return df
-

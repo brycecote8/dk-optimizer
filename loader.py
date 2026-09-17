@@ -107,6 +107,10 @@ def load_salaries(csv_path):
     return df
 
 
+# Positions sportsbooks never post player props for.
+NO_PROP_POSITIONS = {"DST", "K"}
+
+
 # DraftKings injury statuses that mean the player will not play. "Q"
 # (questionable) is deliberately NOT here — most questionable players suit up.
 NOT_PLAYING = {"OUT", "O", "IR", "D", "DOUBTFUL", "PUP", "NA", "SUSP", "SUS", "NFI"}
@@ -191,7 +195,8 @@ def apply_projections(df, projections=None, drop_unmatched=False):
     strong signal he is not playing. Falling back to his season average would
     make an inactive star look like a great value and get him rostered, where
     he scores zero. With drop_unmatched=True those players are removed from
-    the pool instead. Defenses are always kept, since they never have props.
+    the pool instead. Defenses and kickers are always kept, since they never
+    have props.
     """
     df = df.copy()
 
@@ -247,19 +252,22 @@ def apply_projections(df, projections=None, drop_unmatched=False):
     # separately because defenses never have betting props — falling back for
     # them is expected, not a problem.
     unmatched = df[df["ProjectionSource"] != "Imported projection"]
-    unmatched_names = unmatched.loc[
-        unmatched["Position"] != "DST", "Name"].tolist()
+    # Defenses and kickers never have player props, so a missing line says
+    # nothing about whether they're playing.
+    no_props = unmatched["Position"].isin(NO_PROP_POSITIONS)
+    unmatched_names = unmatched.loc[~no_props, "Name"].tolist()
     stats = {
         "matched": matched,
         "total": len(df),
         "unmatched_names": unmatched_names,
-        "unmatched_dst": int((unmatched["Position"] == "DST").sum()),
+        "unmatched_dst": int(no_props.sum()),
         "dropped": [],
     }
 
     if drop_unmatched and unmatched_names:
         # Keep defenses (never have props); drop everyone else with no line.
-        keep = (df["ProjectionSource"] == "Imported projection") | (df["Position"] == "DST")
+        keep = ((df["ProjectionSource"] == "Imported projection")
+                | df["Position"].isin(NO_PROP_POSITIONS))
         stats["dropped"] = unmatched_names
         df = df[keep].reset_index(drop=True)
         print(f"  Dropped {len(unmatched_names)} player(s) with no projection "
