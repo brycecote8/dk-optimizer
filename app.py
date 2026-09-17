@@ -117,7 +117,7 @@ with st.sidebar:
             chosen = st.selectbox("Which slate are you playing?", labels,
                                   index=default)
             picked = next(g for g in gamedays if g["label"] == chosen)
-            cost = vegas.estimate_cost(len(picked["events"]))
+            cost = vegas.estimate_cost(len(picked["events"])) + 2
             st.info(f"Fetching this slate costs **{cost} credits**.")
             with st.expander("Games in this slate"):
                 st.write("\n".join(
@@ -130,8 +130,13 @@ with st.sidebar:
                     with st.spinner("Pulling betting lines from all books..."):
                         rows, meta = vegas.fetch_projections_for(
                             api_key, picked["events"])
+                        # Spreads/totals for every game: one call, 2 credits.
+                        # Used to project defenses from their matchup.
+                        lines = vegas.fetch_game_lines(api_key)
+                    meta["credits_used"] = meta.get("credits_used", 0) + 2
                     st.session_state["vegas_rows"] = rows
                     st.session_state["vegas_meta"] = meta
+                    st.session_state["game_lines"] = lines
                 except vegas.VegasError as e:
                     st.session_state.pop("vegas_rows", None)
                     st.error(str(e))
@@ -169,7 +174,7 @@ with st.sidebar:
         )
 
     st.header("2. Your rules")
-    num_lineups = st.slider("How many lineups?", 1, 150, 20)
+    num_lineups = st.slider("How many lineups?", 1, 150, 5)
     max_shared = st.slider(
         "Max players two lineups can share", 1, 8, 6,
         help="Lower = more different lineups.",
@@ -186,28 +191,48 @@ with st.sidebar:
         help="Classic = 9 players across many games. Showdown = 6 players from "
              "ONE game with a 1.5x Captain. Auto-detect reads your salary file.",
     )
+    PRESETS = {
+        "Single-entry tournament": dict(obj=0, lev=4, stack=2, bb=1),
+        "Large-field tournament": dict(obj=0, lev=10, stack=2, bb=1),
+        "Cash game (50/50, double-up)": dict(obj=1, lev=0, stack=1, bb=0),
+        "Custom": None,
+    }
+    preset_name = st.selectbox(
+        "Contest type", list(PRESETS.keys()),
+        help="Sets every strategy control below in one step. Pick Custom to "
+             "adjust them yourself.",
+    )
+    P = PRESETS[preset_name]
+    locked = P is not None
+    if locked:
+        st.caption("Controls below are set by this contest type. "
+                   "Choose **Custom** to change them.")
+
     contest_type = st.radio(
         "Optimize for",
         ["Tournaments (upside)", "Cash games (safe)"],
+        index=P["obj"] if locked else 0, disabled=locked,
         help="Tournaments use each player's ceiling (upside). Cash games use "
              "average points.",
     )
     objective = "ceiling" if contest_type.startswith("Tournaments") else "mean"
 
     leverage = st.slider(
-        "Leverage — projected points to give up for uniqueness", 0, 20, 0,
+        "Leverage — projected points to give up for uniqueness", 0, 20,
+        P["lev"] if locked else 0, disabled=locked,
         help="The optimizer finds the best lineup, then the least-popular "
-             "lineup within this many points of it. 0 = just the best lineup. "
-             "Cash games: 0. Small tournaments: 3–6. Big tournaments: 8–15.",
+             "lineup within this many points of it. 0 = just the best lineup.",
     )
 
     stack_size = st.slider(
-        "Stack: QB + this many of his own WR/TE", 0, 3, 0,
+        "Stack: QB + this many of his own WR/TE", 0, 3,
+        P["stack"] if locked else 0, disabled=locked,
         help="Pairs your QB with his own pass-catchers. Big driver of "
              "tournament upside. 0 = off.",
     )
     bring_back = st.slider(
-        "Bring-back: players from the opposing team", 0, 2, 0,
+        "Bring-back: players from the opposing team", 0, 2,
+        P["bb"] if locked else 0, disabled=locked,
         help="Adds a player from the other side of your QB's game — pays off "
              "in high-scoring shootouts. 0 = off.",
     )
@@ -439,6 +464,9 @@ if generate:
 
             df = loader.apply_projections(df, projections_input,
                                           drop_unmatched=drop_inactive)
+            if source == "Auto-fetch Vegas projections (free)":
+                df = vegas.apply_dst_projections(
+                    df, st.session_state.get("game_lines"))
             df = metrics.enrich(df)   # add Ceiling + Ownership (or estimates)
 
             if showdown:

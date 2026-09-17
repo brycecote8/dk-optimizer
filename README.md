@@ -100,7 +100,7 @@ Listing the slates is **free**. Only fetching props costs credits, at
 | Slate | Games | Cost |
 |---|---|---|
 | Thursday night | 1 | 6 |
-| Sunday main slate | ~13 | ~78 |
+| Sunday main slate | ~13 | ~80 |
 | Monday night | 1 | 6 |
 | **Per week (all three)** | | **~90** |
 | **Per month** | | **~390 of 500** ✅ |
@@ -151,7 +151,25 @@ Questionable (Q) players are kept, since most of them play.
 
 ### Strategy controls (section 3 in the app)
 
-These are what make lineups better than a basic free optimizer:
+Start with **Contest type**. It sets every control below in one step:
+
+| Contest type | Optimize for | Leverage | Stack | Bring-back |
+|---|---|---|---|---|
+| Single-entry tournament (default) | Upside | 4 | 2 | 1 |
+| Large-field tournament | Upside | 10 | 2 | 1 |
+| Cash game | Average | 0 | 1 | 0 |
+
+Pick **Custom** to adjust them yourself.
+
+### Defenses
+
+Defenses have no player props. When you fetch Vegas projections, the app also
+pulls every game's spread and total (one call, 2 credits) and projects each
+defense from how many points its opponent is expected to score, weighted
+through DraftKings' points-allowed tiers. Without this, a defense's projection
+is last season's average and ignores who it's playing.
+
+What the individual controls do:
 
 - **Optimize for** — *Tournaments* uses each player's ceiling (upside);
   *Cash games* uses average points.

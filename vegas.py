@@ -18,6 +18,7 @@ The two halves of this file:
 """
 
 import json
+import math
 import urllib.request
 import urllib.error
 from collections import defaultdict
@@ -128,14 +129,28 @@ def stats_to_points(stats):
     pts += receptions * 1.0         # PPR: 1 pt per catch
     pts += td_prob * 6.0            # expected rush/rec TD points
 
-    # DraftKings milestone bonuses.
-    if pass_yds >= 300:
-        pts += 3.0
-    if rush_yds >= 100:
-        pts += 3.0
-    if rec_yds >= 100:
-        pts += 3.0
+    # DraftKings milestone bonuses (+3 each), weighted by how LIKELY the
+    # player is to reach them. A betting line is a median, not a guarantee: a
+    # receiver set at 92.5 yards still clears 100 fairly often, and one set at
+    # 101.5 misses about half the time. A hard cutoff at the line created a
+    # 3-point cliff between near-identical players.
+    pts += 3.0 * _prob_at_least(pass_yds, 300, spread=0.25)
+    pts += 3.0 * _prob_at_least(rush_yds, 100, spread=0.50)
+    pts += 3.0 * _prob_at_least(rec_yds, 100, spread=0.55)
     return round(pts, 2)
+
+
+def _prob_at_least(line, threshold, spread):
+    """
+    Chance a stat reaches `threshold` when the betting line (the median) is
+    `line`. Game-to-game swings scale with the line itself, so the standard
+    deviation is `spread` times the line, with a small floor.
+    """
+    if line <= 0:
+        return 0.0
+    sd = max(spread * line, 12.0)
+    z = (threshold - line) / sd
+    return 0.5 * (1.0 - math.erf(z / math.sqrt(2.0)))
 
 
 def events_to_projections(events):
@@ -337,3 +352,118 @@ def fetch_projections_for(api_key, events, markets=None):
         "truncated": False,
     }
     return rows, meta
+
+
+# ---------------------------------------------------------------------------
+# Game lines -> team totals -> defense projections
+# ---------------------------------------------------------------------------
+TEAM_ABBR = {
+    "Arizona Cardinals": "ARI", "Atlanta Falcons": "ATL",
+    "Baltimore Ravens": "BAL", "Buffalo Bills": "BUF",
+    "Carolina Panthers": "CAR", "Chicago Bears": "CHI",
+    "Cincinnati Bengals": "CIN", "Cleveland Browns": "CLE",
+    "Dallas Cowboys": "DAL", "Denver Broncos": "DEN",
+    "Detroit Lions": "DET", "Green Bay Packers": "GB",
+    "Houston Texans": "HOU", "Indianapolis Colts": "IND",
+    "Jacksonville Jaguars": "JAX", "Kansas City Chiefs": "KC",
+    "Las Vegas Raiders": "LV", "Los Angeles Chargers": "LAC",
+    "Los Angeles Rams": "LAR", "Miami Dolphins": "MIA",
+    "Minnesota Vikings": "MIN", "New England Patriots": "NE",
+    "New Orleans Saints": "NO", "New York Giants": "NYG",
+    "New York Jets": "NYJ", "Philadelphia Eagles": "PHI",
+    "Pittsburgh Steelers": "PIT", "San Francisco 49ers": "SF",
+    "Seattle Seahawks": "SEA", "Tampa Bay Buccaneers": "TB",
+    "Tennessee Titans": "TEN", "Washington Commanders": "WAS",
+}
+# DraftKings has used a few alternate abbreviations over the years.
+ABBR_ALIASES = {"JAC": "JAX", "LA": "LAR", "WSH": "WAS"}
+
+
+def fetch_game_lines(api_key):
+    """
+    Spreads and totals for every upcoming game in ONE call (2 credits total,
+    not per game). Returns {team_abbr: {"implied": pts, "opp_implied": pts}}
+    for each team's next game, averaged across sportsbooks.
+    """
+    url = (f"{API_BASE}/sports/{SPORT}/odds?apiKey={api_key}"
+           "&regions=us&markets=spreads,totals&oddsFormat=american")
+    games, _ = _get(url)
+    return game_lines_from(games)
+
+
+def game_lines_from(games):
+    """Pure half of fetch_game_lines: raw odds JSON -> implied team totals."""
+    lines = {}
+    for g in sorted(games, key=lambda g: g.get("commence_time", "")):
+        home = TEAM_ABBR.get(g.get("home_team"))
+        away = TEAM_ABBR.get(g.get("away_team"))
+        if not home or not away or home in lines or away in lines:
+            continue  # unknown team, or we already have its nearest game
+
+        totals, home_spreads = [], []
+        for book in g.get("bookmakers", []):
+            for m in book.get("markets", []):
+                for oc in m.get("outcomes", []):
+                    if oc.get("point") is None:
+                        continue
+                    if m["key"] == "totals" and oc.get("name") == "Over":
+                        totals.append(float(oc["point"]))
+                    elif m["key"] == "spreads" and oc.get("name") == g["home_team"]:
+                        home_spreads.append(float(oc["point"]))
+        if not totals or not home_spreads:
+            continue
+
+        total = sum(totals) / len(totals)
+        spread = sum(home_spreads) / len(home_spreads)   # negative = favored
+        home_pts = (total - spread) / 2.0
+        away_pts = total - home_pts
+        lines[home] = {"implied": home_pts, "opp_implied": away_pts}
+        lines[away] = {"implied": away_pts, "opp_implied": home_pts}
+    return lines
+
+
+# DraftKings points-allowed tiers: (lowest score in tier, fantasy points).
+_PA_TIERS = [(0, 10), (1, 7), (7, 4), (14, 1), (21, 0), (28, -1), (35, -4)]
+
+
+def dst_projection(opp_implied):
+    """
+    Expected DraftKings points for a defense, given how many points Vegas
+    expects its OPPONENT to score.
+
+    Points allowed are treated as a bell curve around that expectation, and
+    each DraftKings tier is weighted by its probability. Sacks, takeaways and
+    defensive scores are added on top, slightly higher against weak offenses.
+    """
+    sd = 9.5
+
+    def cdf(x):
+        return 0.5 * (1.0 + math.erf((x - opp_implied) / (sd * math.sqrt(2.0))))
+
+    expected_tier = 0.0
+    for n, (low, pts) in enumerate(_PA_TIERS):
+        lo = -math.inf if n == 0 else low - 0.5
+        hi = math.inf if n + 1 == len(_PA_TIERS) else _PA_TIERS[n + 1][0] - 0.5
+        expected_tier += pts * (cdf(hi) - cdf(lo))
+
+    events = 4.0 + 0.12 * (24.0 - opp_implied)
+    return round(expected_tier + max(events, 1.5), 2)
+
+
+def apply_dst_projections(df, lines):
+    """
+    Replace each defense's projection with one based on its opponent's
+    Vegas team total. Defenses have no player props, so without this they
+    fall back to last season's average and ignore the matchup entirely.
+    """
+    if not lines or "Position" not in df.columns:
+        return df
+    df = df.copy()
+    for i in df.index[df["Position"] == "DST"]:
+        abbr = str(df.at[i, "TeamAbbrev"]).upper()
+        info = lines.get(ABBR_ALIASES.get(abbr, abbr))
+        if info:
+            df.at[i, "Projection"] = dst_projection(info["opp_implied"])
+            df.at[i, "ProjectionSource"] = "Vegas game line (DST)"
+    return df
+
