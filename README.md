@@ -151,19 +151,28 @@ Questionable (Q) players are kept, since most of them play.
 
 ### Strategy controls (section 3 in the app)
 
-Start with **Contest type**. It sets every control below in one step, and
-decides how much risk the lineups carry:
+Two different things, easy to confuse:
 
-| Contest type | Optimize for | Leverage | Stack | Bring-back | Risk |
+- **Roster format** is *which roster you fill*: Classic (9 players, many
+  games) or Showdown (6 players, one game). Your salary file decides it.
+- **Payout style** is *how the prize money is split*: top-heavy tournament,
+  or even-payout 50/50 / double-up. That's the contest you click on at
+  DraftKings.
+
+They're independent. Classic and Showdown each run as tournaments **and** as
+50/50s. Payout style is what should drive your strategy:
+
+| Payout style | Optimize for | Leverage | Stack | Bring-back | Risk |
 |---|---|---|---|---|---|
-| Cash game (default) | Floor | 0 | 0 | 0 | Lower. Beat half the field, flat payout. |
-| Single-entry tournament | Ceiling | 2 | 2 | 1 | Higher by design. Most entries lose. |
-| Large-field tournament | Ceiling | 8 | 2 | 1 | Highest. Built to look nothing like the crowd. |
+| Top-heavy: small tournament (default) | Ceiling | 2 | 2 | 1 | Higher by design. Most entries lose. |
+| Top-heavy: large tournament | Ceiling | 8 | 2 | 1 | Highest. Built to look nothing like the crowd. |
+| Even payout: 50/50, double-up | Floor | 0 | 0 | 0 | Lower. Beat half the field, flat payout. |
 
 Tournament settings chase upside and deliberately trade projected points for
-lower ownership. That is correct for tournaments and wrong for cash games:
-they produce lineups that lose most weeks and occasionally finish big. If you
-want steadier results, stay on **Cash game**.
+lower ownership. That is right for tournaments and wrong for even-payout
+contests: they produce lineups that lose most weeks and occasionally finish
+big. If you want steadier results, enter a 50/50 instead and switch this to
+**Even payout** — that works in Classic and Showdown alike.
 
 Pick **Custom** to adjust them yourself.
 

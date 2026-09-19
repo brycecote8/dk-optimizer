@@ -186,33 +186,38 @@ with st.sidebar:
 
     st.header("3. Strategy")
     contest_format = st.radio(
-        "Contest format",
+        "Roster format",
         ["Auto-detect", "Classic (full slate)", "Showdown (single game)"],
-        help="Classic = 9 players across many games. Showdown = 6 players from "
-             "ONE game with a 1.5x Captain. Auto-detect reads your salary file.",
+        help="Which roster you fill. Classic = 9 players across many games. "
+             "Showdown = 6 players from ONE game with a 1.5x Captain. "
+             "Auto-detect reads it from your salary file.",
     )
     PRESETS = {
-        "Cash game (50/50, double-up)": dict(
-            obj=0, lev=0, stack=0, bb=0,
-            note="**Lower risk.** Maximises each player's floor, their bad-day "
-                 "score. You only need to beat half the field, and the payout "
-                 "is flat. You'll win smaller and lose far less often."),
-        "Single-entry tournament": dict(
+        "Top-heavy: small tournament": dict(
             obj=2, lev=2, stack=2, bb=1,
             note="**Higher risk by design.** Chases upside and gives up some "
                  "projected points to be less popular. Most entries lose; the "
                  "point is the occasional big finish."),
-        "Large-field tournament": dict(
+        "Top-heavy: large tournament": dict(
             obj=2, lev=8, stack=2, bb=1,
-            note="**Highest risk.** Built to be very different from the crowd, "
+            note="**Highest risk.** Built to look nothing like the crowd, "
                  "because a common lineup can't win a huge field. Expect to "
                  "lose the large majority of entries."),
+        "Even payout: 50/50 or double-up": dict(
+            obj=0, lev=0, stack=0, bb=0,
+            note="**Lower risk.** Maximises each player's floor, their bad-day "
+                 "score. You only need to beat half the field, and the payout "
+                 "is flat. You'll win smaller and lose far less often."),
         "Custom": None,
     }
+    st.caption("**Payout style** is separate from roster format. Classic and "
+               "Showdown each run as both tournaments and 50/50s — it depends "
+               "which contest you enter on DraftKings.")
     preset_name = st.selectbox(
-        "Contest type", list(PRESETS.keys()),
-        help="Sets every strategy control below in one step, and determines "
-             "how much risk the lineups carry.",
+        "Payout style of the contest you're entering", list(PRESETS.keys()),
+        help="How the prize money is split, which is what should drive your "
+             "strategy. Top-heavy contests reward upside; even-payout "
+             "contests reward avoiding bad days.",
     )
     P = PRESETS[preset_name]
     locked = P is not None
