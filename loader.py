@@ -278,7 +278,7 @@ def apply_projections(df, projections=None, drop_unmatched=False):
     # Optional bonus columns: if the projections file also has Ceiling or
     # Ownership, carry them over (matched by Name). Anything not provided is
     # estimated later in metrics.py.
-    for extra in ("Ceiling", "Ownership"):
+    for extra in ("Ceiling", "Floor", "Ownership"):
         if extra in proj.columns:
             extra_lookup = dict(zip(proj["Name"],
                                     pd.to_numeric(proj[extra], errors="coerce")))

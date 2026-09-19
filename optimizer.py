@@ -108,7 +108,8 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
     game = df["GameInfo"].to_dict()          # row number -> game
 
     # Pick which number we're maximizing: average points or ceiling (upside).
-    score_col = "Ceiling" if objective == "ceiling" else "Projection"
+    score_col = {"ceiling": "Ceiling", "floor": "Floor"}.get(
+        objective, "Projection")
     if score_col not in df.columns:
         raise ValueError(f"Need a '{score_col}' column for objective={objective!r}.")
     score = df[score_col].to_dict()
@@ -269,7 +270,8 @@ def optimize_showdown(df, num_lineups=20, max_shared=4, max_exposure_pct=0.60,
     cpt_salary = df["CptSalary"].to_dict()
     team = df["TeamAbbrev"].to_dict()
 
-    score_col = "Ceiling" if objective == "ceiling" else "Projection"
+    score_col = {"ceiling": "Ceiling", "floor": "Floor"}.get(
+        objective, "Projection")
     if score_col not in df.columns:
         raise ValueError(f"Need a '{score_col}' column for objective={objective!r}.")
     score = df[score_col].to_dict()

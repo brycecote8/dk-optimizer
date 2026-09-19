@@ -52,6 +52,21 @@ def _estimate_ceiling(row):
     return round(float(row["Projection"]) * mult, 1)
 
 
+def ensure_floor(df):
+    """
+    Guarantee a 'Floor' column: a realistic bad game. Vegas-derived floors
+    come from the projections themselves (steady yards and catches versus
+    all-or-nothing touchdowns). Without them, estimate at 60% of projection.
+    """
+    df = df.copy()
+    if "Floor" in df.columns and df["Floor"].notna().any():
+        df["Floor"] = pd.to_numeric(df["Floor"], errors="coerce")
+        df["Floor"] = df["Floor"].fillna((df["Projection"] * 0.60).round(1))
+        return df
+    df["Floor"] = (df["Projection"] * 0.60).round(1)
+    return df
+
+
 def ensure_ownership(df):
     """
     Guarantee an 'Ownership' column (a percentage, e.g. 25.0 means 25%).
@@ -89,5 +104,5 @@ def ensure_ownership(df):
 
 
 def enrich(df):
-    """Add both Ceiling and Ownership in one call."""
-    return ensure_ownership(ensure_ceiling(df))
+    """Add Ceiling, Floor and Ownership in one call."""
+    return ensure_ownership(ensure_floor(ensure_ceiling(df)))

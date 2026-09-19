@@ -192,43 +192,57 @@ with st.sidebar:
              "ONE game with a 1.5x Captain. Auto-detect reads your salary file.",
     )
     PRESETS = {
-        "Single-entry tournament": dict(obj=0, lev=4, stack=2, bb=1),
-        "Large-field tournament": dict(obj=0, lev=10, stack=2, bb=1),
-        "Cash game (50/50, double-up)": dict(obj=1, lev=0, stack=1, bb=0),
+        "Cash game (50/50, double-up)": dict(
+            obj=0, lev=0, stack=0, bb=0,
+            note="**Lower risk.** Maximises each player's floor, their bad-day "
+                 "score. You only need to beat half the field, and the payout "
+                 "is flat. You'll win smaller and lose far less often."),
+        "Single-entry tournament": dict(
+            obj=2, lev=2, stack=2, bb=1,
+            note="**Higher risk by design.** Chases upside and gives up some "
+                 "projected points to be less popular. Most entries lose; the "
+                 "point is the occasional big finish."),
+        "Large-field tournament": dict(
+            obj=2, lev=8, stack=2, bb=1,
+            note="**Highest risk.** Built to be very different from the crowd, "
+                 "because a common lineup can't win a huge field. Expect to "
+                 "lose the large majority of entries."),
         "Custom": None,
     }
     preset_name = st.selectbox(
         "Contest type", list(PRESETS.keys()),
-        help="Sets every strategy control below in one step. Pick Custom to "
-             "adjust them yourself.",
+        help="Sets every strategy control below in one step, and determines "
+             "how much risk the lineups carry.",
     )
     P = PRESETS[preset_name]
     locked = P is not None
     if locked:
+        st.caption(P["note"])
         st.caption("Controls below are set by this contest type. "
                    "Choose **Custom** to change them.")
 
+    OBJECTIVES = ["Floor (safest)", "Average", "Ceiling (most upside)"]
     contest_type = st.radio(
-        "Optimize for",
-        ["Tournaments (upside)", "Cash games (safe)"],
-        index=P["obj"] if locked else 0, disabled=locked,
-        help="Tournaments use each player's ceiling (upside). Cash games use "
-             "average points.",
+        "Optimize for", OBJECTIVES,
+        index=P["obj"] if locked else 1, disabled=locked,
+        help="Floor is a player's bad-day score, ceiling is his big-day score. "
+             "Cash games are won on floors; tournaments on ceilings.",
     )
-    objective = "ceiling" if contest_type.startswith("Tournaments") else "mean"
+    objective = {0: "floor", 1: "mean", 2: "ceiling"}[OBJECTIVES.index(contest_type)]
 
     leverage = st.slider(
         "Leverage — projected points to give up for uniqueness", 0, 20,
         P["lev"] if locked else 0, disabled=locked,
         help="The optimizer finds the best lineup, then the least-popular "
-             "lineup within this many points of it. 0 = just the best lineup.",
+             "lineup within this many points of it. 0 = just the best lineup. "
+             "Only useful in tournaments; it costs you points in cash games.",
     )
 
     stack_size = st.slider(
         "Stack: QB + this many of his own WR/TE", 0, 3,
         P["stack"] if locked else 0, disabled=locked,
-        help="Pairs your QB with his own pass-catchers. Big driver of "
-             "tournament upside. 0 = off.",
+        help="Pairs your QB with his own pass-catchers. Raises both upside and "
+             "risk, so it's a tournament tool. 0 = off.",
     )
     bring_back = st.slider(
         "Bring-back: players from the opposing team", 0, 2,

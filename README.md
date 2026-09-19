@@ -151,13 +151,19 @@ Questionable (Q) players are kept, since most of them play.
 
 ### Strategy controls (section 3 in the app)
 
-Start with **Contest type**. It sets every control below in one step:
+Start with **Contest type**. It sets every control below in one step, and
+decides how much risk the lineups carry:
 
-| Contest type | Optimize for | Leverage | Stack | Bring-back |
-|---|---|---|---|---|
-| Single-entry tournament (default) | Upside | 4 | 2 | 1 |
-| Large-field tournament | Upside | 10 | 2 | 1 |
-| Cash game | Average | 0 | 1 | 0 |
+| Contest type | Optimize for | Leverage | Stack | Bring-back | Risk |
+|---|---|---|---|---|---|
+| Cash game (default) | Floor | 0 | 0 | 0 | Lower. Beat half the field, flat payout. |
+| Single-entry tournament | Ceiling | 2 | 2 | 1 | Higher by design. Most entries lose. |
+| Large-field tournament | Ceiling | 8 | 2 | 1 | Highest. Built to look nothing like the crowd. |
+
+Tournament settings chase upside and deliberately trade projected points for
+lower ownership. That is correct for tournaments and wrong for cash games:
+they produce lineups that lose most weeks and occasionally finish big. If you
+want steadier results, stay on **Cash game**.
 
 Pick **Custom** to adjust them yourself.
 
@@ -171,8 +177,11 @@ is last season's average and ignores who it's playing.
 
 What the individual controls do:
 
-- **Optimize for** — *Tournaments* uses each player's ceiling (upside);
-  *Cash games* uses average points.
+- **Optimize for** — *Floor* is a player's bad-day score, *Ceiling* his
+  big-day score, *Average* the middle. Floors come from the betting lines
+  themselves: points from catches and yards are steady, points from
+  touchdowns are close to a coin flip, so two players with the same
+  projection can have very different bad days.
 - **Leverage** — how many projected points you'll give up to be different.
   The optimizer finds the best lineup, then the least-popular lineup within
   that many points of it. Cash games: 0. Small tournaments: 3–6. Big

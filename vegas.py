@@ -110,9 +110,19 @@ def collect_player_stats(events):
 
 
 def stats_to_points(stats):
+    """DraftKings points for one player's averaged stat line (the mean)."""
+    return stats_to_range(stats)[1]
+
+
+def stats_to_range(stats):
     """
-    Apply DraftKings NFL scoring to one player's averaged stat line.
-    Returns projected fantasy points (a number).
+    Turn a stat line into (floor, mean, ceiling) DraftKings points.
+
+    The split matters. Points from yards and catches are steady week to week:
+    a receiver with a 6.5-catch line almost always catches some passes. Points
+    from touchdowns are close to a coin flip: 6 points or nothing. So two
+    players with the same projection can have very different bad days, and
+    cash games are won by avoiding bad days.
     """
     pass_yds = stats.get("pass_yds", 0.0)
     pass_tds = stats.get("pass_tds", 0.0)
@@ -121,23 +131,26 @@ def stats_to_points(stats):
     receptions = stats.get("receptions", 0.0)
     td_prob = stats.get("td_prob", 0.0)
 
-    pts = 0.0
-    pts += pass_yds * 0.04          # 1 pt per 25 passing yards
-    pts += pass_tds * 4.0           # 4 pts per passing TD
-    pts += rush_yds * 0.1           # 1 pt per 10 rushing yards
-    pts += rec_yds * 0.1            # 1 pt per 10 receiving yards
-    pts += receptions * 1.0         # PPR: 1 pt per catch
-    pts += td_prob * 6.0            # expected rush/rec TD points
+    # Volume: yards, catches, and passing TDs (quarterbacks throw them fairly
+    # consistently, unlike the all-or-nothing rushing/receiving TD).
+    base = (pass_yds * 0.04 + pass_tds * 4.0 + rush_yds * 0.1
+            + rec_yds * 0.1 + receptions * 1.0)
 
-    # DraftKings milestone bonuses (+3 each), weighted by how LIKELY the
-    # player is to reach them. A betting line is a median, not a guarantee: a
-    # receiver set at 92.5 yards still clears 100 fairly often, and one set at
-    # 101.5 misses about half the time. A hard cutoff at the line created a
-    # 3-point cliff between near-identical players.
-    pts += 3.0 * _prob_at_least(pass_yds, 300, spread=0.25)
-    pts += 3.0 * _prob_at_least(rush_yds, 100, spread=0.50)
-    pts += 3.0 * _prob_at_least(rec_yds, 100, spread=0.55)
-    return round(pts, 2)
+    # All-or-nothing rushing/receiving touchdown points.
+    td_points = td_prob * 6.0
+
+    # Milestone bonuses, weighted by the chance of reaching them.
+    p_pass = _prob_at_least(pass_yds, 300, spread=0.25)
+    p_rush = _prob_at_least(rush_yds, 100, spread=0.50)
+    p_rec = _prob_at_least(rec_yds, 100, spread=0.55)
+    bonus_mean = 3.0 * (p_pass + p_rush + p_rec)
+    # On a big day the realistic bonuses land, if they were ever in reach.
+    bonus_high = 3.0 * sum(1 for p in (p_pass, p_rush, p_rec) if p >= 0.15)
+
+    mean = base + td_points + bonus_mean
+    floor = 0.60 * base                      # quiet game, no touchdown
+    ceiling = 1.70 * base + 6.0 * min(1.0, td_prob * 1.8) + bonus_high
+    return round(floor, 2), round(mean, 2), round(ceiling, 2)
 
 
 def _prob_at_least(line, threshold, spread):
@@ -161,7 +174,9 @@ def events_to_projections(events):
     stats = collect_player_stats(events)
     rows = []
     for name, s in stats.items():
-        rows.append({"Name": name, "ProjectedPoints": stats_to_points(s)})
+        floor, mean, ceiling = stats_to_range(s)
+        rows.append({"Name": name, "ProjectedPoints": mean,
+                     "Floor": floor, "Ceiling": ceiling})
     rows.sort(key=lambda r: r["ProjectedPoints"], reverse=True)
     return rows
 
