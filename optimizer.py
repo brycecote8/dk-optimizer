@@ -78,7 +78,7 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
              objective="mean", leverage_weight=0.0,
              stack_size=0, bring_back=0, verbose=True,
              leverage_budget=0.0, max_per_game=8, no_dst_conflict=False,
-             max_per_team=8):
+             max_per_team=8, qb_teams=None):
     """
     Build up to `num_lineups` lineups.
 
@@ -101,6 +101,8 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
                          set below what your stack needs (QB + stack + bring-back).
       max_per_team     - most players allowed from any single team
                          (DraftKings allows 8). Never set below QB + stack.
+      qb_teams         - if given, the QB (and so the stack) must come from
+                         one of these teams, e.g. the highest-scoring games.
       no_dst_conflict  - never roster offensive players facing your own
                          defense, since the two root against each other.
 
@@ -143,6 +145,11 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
     game_cap = min(8, max(int(max_per_game), 1 + stack_size + bring_back))
     team_cap = min(8, max(int(max_per_team), 1 + stack_size))
 
+    # Only allow QBs (and therefore stacks) from chosen teams — ignored if none
+    # of those teams actually has a QB in the pool, rather than failing.
+    if qb_teams and not any(pos[i] == "QB" and team[i] in qb_teams for i in players):
+        qb_teams = None
+
     lineups = []
     usage = {i: 0 for i in players}          # how many lineups each player is in
 
@@ -162,6 +169,12 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
 
         # Salary cap.
         prob += pulp.lpSum(salary[i] * x[i] for i in players) <= SALARY_CAP
+
+        # Stack only where the game is expected to shoot out.
+        if qb_teams:
+            for i in players:
+                if pos[i] == "QB" and team[i] not in qb_teams:
+                    prob += x[i] == 0
 
         # Players from any one team: DraftKings allows 8, plus your own limit.
         for t in teams:

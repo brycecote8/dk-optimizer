@@ -193,18 +193,26 @@ with st.sidebar:
              "Auto-detect reads it from your salary file.",
     )
     PRESETS = {
+        "Winner-take-all: only 1st place pays": dict(
+            obj=2, lev=4, stack=2, bb=1, cap=5, team=4, hot=True,
+            note="**Built to finish first, not to cash.** When only first "
+                 "place pays, 15th and last pay the same: nothing. So this "
+                 "ignores safety and chases the highest possible score, "
+                 "stacking a QB with his receivers in one of the games Vegas "
+                 "expects to score the most. Most weeks it finishes nowhere "
+                 "near the top. It's built for the week it finishes first."),
         "Top-heavy: small tournament": dict(
-            obj=2, lev=2, stack=2, bb=1, cap=4, team=3,
+            obj=2, lev=2, stack=2, bb=1, cap=4, team=3, hot=True,
             note="**Higher risk by design.** Chases upside and gives up some "
                  "projected points to be less popular. Most entries lose; the "
                  "point is the occasional big finish."),
         "Top-heavy: large tournament": dict(
-            obj=2, lev=8, stack=2, bb=1, cap=5, team=4,
+            obj=2, lev=8, stack=2, bb=1, cap=5, team=4, hot=False,
             note="**Highest risk.** Built to look nothing like the crowd, "
                  "because a common lineup can't win a huge field. Expect to "
                  "lose the large majority of entries."),
         "Even payout: 50/50 or double-up": dict(
-            obj=0, lev=0, stack=0, bb=0, cap=3, team=2,
+            obj=0, lev=0, stack=0, bb=0, cap=3, team=2, hot=False,
             note="**Lower risk.** Maximises each player's floor, their bad-day "
                  "score. You only need to beat half the field, and the payout "
                  "is flat. You'll win smaller and lose far less often."),
@@ -267,6 +275,13 @@ with st.sidebar:
         P["team"] if locked else 4, disabled=locked,
         help="How much of your lineup depends on one team's offense. "
              "Classic only.",
+    )
+    stack_hot = st.checkbox(
+        "Only stack in the 3 highest-scoring games (by Vegas total)",
+        value=P["hot"] if locked else True, disabled=locked,
+        help="A stack only pays off if its game shoots out. This limits your "
+             "QB, and so your stack, to the three games Vegas expects to score "
+             "the most. Needs Vegas projections; Classic only.",
     )
     no_dst_conflict = st.checkbox(
         "Don't play my defense against my own players", value=True,
@@ -517,6 +532,12 @@ if generate:
                     verbose=False,
                 )
             else:
+                lines = (st.session_state.get("game_lines")
+                         if source == "Auto-fetch Vegas projections (free)" else None)
+                qb_teams = (vegas.highest_total_teams(
+                    lines, df["TeamAbbrev"].unique(), n_games=3)
+                    if stack_hot and stack_size > 0 and lines else None)
+                st.session_state["stack_teams"] = sorted(qb_teams or [])
                 lineups = optimizer.optimize(
                     df,
                     num_lineups=num_lineups,
@@ -528,6 +549,7 @@ if generate:
                     bring_back=bring_back,
                     max_per_game=max_per_game,
                     max_per_team=max_per_team,
+                    qb_teams=qb_teams,
                     no_dst_conflict=no_dst_conflict,
                     verbose=False,
                 )
@@ -586,6 +608,11 @@ if "lineups" in st.session_state:
                 f"Built {len(lineups)} of {requested}. The diversity rules ran "
                 "out of room — loosen 'max shared' or raise 'max exposure' for more."
             )
+
+        stack_teams = st.session_state.get("stack_teams")
+        if stack_teams and not showdown:
+            st.caption("Stacks limited to the highest-scoring games: "
+                       + ", ".join(stack_teams) + ".")
 
         injured = st.session_state.get("injured") or []
         if injured:

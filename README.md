@@ -167,9 +167,24 @@ They're independent. Classic and Showdown each run as tournaments **and** as
 
 | Payout style | Optimize for | Leverage | Stack | Bring-back | Max per team | Max per game | Risk |
 |---|---|---|---|---|---|---|---|
-| Top-heavy: small tournament (default) | Ceiling | 2 | 2 | 1 | 3 | 4 | Higher by design. Most entries lose. |
+| Winner-take-all (default) | Ceiling | 4 | 2 | 1 | 4 | 5 | Built to finish first. Most weeks it won't. |
+| Top-heavy: small tournament | Ceiling | 2 | 2 | 1 | 3 | 4 | Higher by design. Most entries lose. |
 | Top-heavy: large tournament | Ceiling | 8 | 2 | 1 | 4 | 5 | Highest. Built to look nothing like the crowd. |
 | Even payout: 50/50, double-up | Floor | 0 | 0 | 0 | 2 | 3 | Lower. Beat half the field, flat payout. |
+
+**Winner-take-all** is for contests where only first place pays. There,
+finishing 15th pays the same as finishing last, so safety is worth nothing and
+only the best possible score matters. That's why it stacks, even though a
+stack only pays off if its game is high-scoring.
+
+**Only stack in the 3 highest-scoring games** addresses exactly that risk: it
+limits your QB, and so your stack, to the three games with the highest Vegas
+totals. Needs Vegas projections (the game totals come with the fetch).
+
+**Salary files** are a snapshot from the moment you download them. Salaries
+don't change during a week, but every week is a new slate, so download a fresh
+file each week. Injury status does change, so download after inactives are
+announced (about 90 minutes before kickoff).
 
 **Max players from any one team / game** limit how much of the lineup rides on
 a single offense or a single game (DraftKings itself allows 8 of each). **Don't play my defense against my

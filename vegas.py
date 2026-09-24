@@ -496,3 +496,24 @@ def apply_dst_projections(df, lines):
             df.at[i, "Projection"] = kicker_projection(info["implied"])
             df.at[i, "ProjectionSource"] = "Vegas game line (K)"
     return df
+
+
+def highest_total_teams(lines, teams, n_games=3):
+    """
+    The teams playing in the slate's `n_games` highest-scoring games, by Vegas
+    game total. Stacks only pay off when the game shoots out, and the total is
+    the market's best guess at which games will.
+    """
+    totals = {}
+    for t in teams:
+        info = lines.get(ABBR_ALIASES.get(t, t)) if lines else None
+        if info:
+            totals[t] = info["implied"] + info["opp_implied"]
+    if not totals:
+        return set()
+    # Each game appears twice (once per team), so the n-th game's total sits
+    # at position 2n in the ranked team list. Ties at the cutoff are kept.
+    ranked = sorted(totals.values(), reverse=True)
+    cutoff = ranked[min(2 * n_games, len(ranked)) - 1]
+    return {t for t, tot in totals.items() if tot >= cutoff}
+
