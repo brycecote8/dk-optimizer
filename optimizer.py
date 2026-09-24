@@ -77,7 +77,8 @@ def _validate_pool(df):
 def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
              objective="mean", leverage_weight=0.0,
              stack_size=0, bring_back=0, verbose=True,
-             leverage_budget=0.0, max_per_game=8, no_dst_conflict=False):
+             leverage_budget=0.0, max_per_game=8, no_dst_conflict=False,
+             max_per_team=8):
     """
     Build up to `num_lineups` lineups.
 
@@ -98,6 +99,8 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
       max_per_game     - most players allowed from any single game. DraftKings
                          allows 8; lower spreads your risk across games. Never
                          set below what your stack needs (QB + stack + bring-back).
+      max_per_team     - most players allowed from any single team
+                         (DraftKings allows 8). Never set below QB + stack.
       no_dst_conflict  - never roster offensive players facing your own
                          defense, since the two root against each other.
 
@@ -138,6 +141,7 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
 
     # A game cap below what the stack requires would make every QB unusable.
     game_cap = min(8, max(int(max_per_game), 1 + stack_size + bring_back))
+    team_cap = min(8, max(int(max_per_team), 1 + stack_size))
 
     lineups = []
     usage = {i: 0 for i in players}          # how many lineups each player is in
@@ -159,9 +163,9 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
         # Salary cap.
         prob += pulp.lpSum(salary[i] * x[i] for i in players) <= SALARY_CAP
 
-        # Max 8 players from any one team.
+        # Players from any one team: DraftKings allows 8, plus your own limit.
         for t in teams:
-            prob += pulp.lpSum(x[i] for i in players if team[i] == t) <= 8
+            prob += pulp.lpSum(x[i] for i in players if team[i] == t) <= team_cap
 
         # At least 2 different games (DraftKings caps a game at 8), and your
         # own tighter limit on how much rides on any one game.

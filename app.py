@@ -194,17 +194,17 @@ with st.sidebar:
     )
     PRESETS = {
         "Top-heavy: small tournament": dict(
-            obj=2, lev=2, stack=2, bb=1, cap=4,
+            obj=2, lev=2, stack=2, bb=1, cap=4, team=3,
             note="**Higher risk by design.** Chases upside and gives up some "
                  "projected points to be less popular. Most entries lose; the "
                  "point is the occasional big finish."),
         "Top-heavy: large tournament": dict(
-            obj=2, lev=8, stack=2, bb=1, cap=5,
+            obj=2, lev=8, stack=2, bb=1, cap=5, team=4,
             note="**Highest risk.** Built to look nothing like the crowd, "
                  "because a common lineup can't win a huge field. Expect to "
                  "lose the large majority of entries."),
         "Even payout: 50/50 or double-up": dict(
-            obj=0, lev=0, stack=0, bb=0, cap=3,
+            obj=0, lev=0, stack=0, bb=0, cap=3, team=2,
             note="**Lower risk.** Maximises each player's floor, their bad-day "
                  "score. You only need to beat half the field, and the payout "
                  "is flat. You'll win smaller and lose far less often."),
@@ -261,6 +261,12 @@ with st.sidebar:
         help="How much of your lineup rides on a single game. DraftKings "
              "allows 8. Lower spreads the risk; higher lets you bet big on a "
              "shootout. Classic only.",
+    )
+    max_per_team = st.slider(
+        "Max players from any one team", 2, 8,
+        P["team"] if locked else 4, disabled=locked,
+        help="How much of your lineup depends on one team's offense. "
+             "Classic only.",
     )
     no_dst_conflict = st.checkbox(
         "Don't play my defense against my own players", value=True,
@@ -521,6 +527,7 @@ if generate:
                     stack_size=stack_size,
                     bring_back=bring_back,
                     max_per_game=max_per_game,
+                    max_per_team=max_per_team,
                     no_dst_conflict=no_dst_conflict,
                     verbose=False,
                 )
