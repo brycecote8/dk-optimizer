@@ -77,7 +77,7 @@ def _validate_pool(df):
 def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
              objective="mean", leverage_weight=0.0,
              stack_size=0, bring_back=0, verbose=True,
-             leverage_budget=0.0):
+             leverage_budget=0.0, max_per_game=8, no_dst_conflict=False):
     """
     Build up to `num_lineups` lineups.
 
@@ -95,6 +95,11 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
                          the LEAST-OWNED lineup within this many points of it.
                          0 = just take the best lineup. Unlike leverage_weight,
                          every step of this has a predictable effect.
+      max_per_game     - most players allowed from any single game. DraftKings
+                         allows 8; lower spreads your risk across games. Never
+                         set below what your stack needs (QB + stack + bring-back).
+      no_dst_conflict  - never roster offensive players facing your own
+                         defense, since the two root against each other.
 
     Returns a list of lineups. Each lineup is a list of row-index numbers that
     point back into the `df` table (so you can look up name, salary, etc).
@@ -131,6 +136,9 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
     if max_appearances < 1:
         max_appearances = 1
 
+    # A game cap below what the stack requires would make every QB unusable.
+    game_cap = min(8, max(int(max_per_game), 1 + stack_size + bring_back))
+
     lineups = []
     usage = {i: 0 for i in players}          # how many lineups each player is in
 
@@ -155,10 +163,22 @@ def optimize(df, num_lineups=20, max_shared=6, max_exposure_pct=0.60,
         for t in teams:
             prob += pulp.lpSum(x[i] for i in players if team[i] == t) <= 8
 
-        # At least 2 different games: cap any single game at 8 players, so all
-        # 9 can never come from one game.
+        # At least 2 different games (DraftKings caps a game at 8), and your
+        # own tighter limit on how much rides on any one game.
         for g in games:
-            prob += pulp.lpSum(x[i] for i in players if game[i] == g) <= 8
+            prob += pulp.lpSum(x[i] for i in players if game[i] == g) <= game_cap
+
+        # Defense vs. your own offense: if a team's defense is in the lineup,
+        # nobody from the offense it's facing can be.
+        if no_dst_conflict:
+            for d in players:
+                if pos[d] != "DST":
+                    continue
+                opp = opponents.get(team[d])
+                facing = [x[i] for i in players
+                          if team[i] == opp and pos[i] in ("QB", "RB", "WR", "TE")]
+                if facing:
+                    prob += pulp.lpSum(facing) <= ROSTER_SIZE * (1 - x[d])
 
         # Stacking: if we pick a team's QB, force at least `stack_size` of that
         # same team's WR/TE into the lineup (QB + his pass-catchers).

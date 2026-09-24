@@ -162,11 +162,16 @@ Two different things, easy to confuse:
 They're independent. Classic and Showdown each run as tournaments **and** as
 50/50s. Payout style is what should drive your strategy:
 
-| Payout style | Optimize for | Leverage | Stack | Bring-back | Risk |
-|---|---|---|---|---|---|
-| Top-heavy: small tournament (default) | Ceiling | 2 | 2 | 1 | Higher by design. Most entries lose. |
-| Top-heavy: large tournament | Ceiling | 8 | 2 | 1 | Highest. Built to look nothing like the crowd. |
-| Even payout: 50/50, double-up | Floor | 0 | 0 | 0 | Lower. Beat half the field, flat payout. |
+| Payout style | Optimize for | Leverage | Stack | Bring-back | Max per game | Risk |
+|---|---|---|---|---|---|---|
+| Top-heavy: small tournament (default) | Ceiling | 2 | 2 | 1 | 4 | Higher by design. Most entries lose. |
+| Top-heavy: large tournament | Ceiling | 8 | 2 | 1 | 5 | Highest. Built to look nothing like the crowd. |
+| Even payout: 50/50, double-up | Floor | 0 | 0 | 0 | 3 | Lower. Beat half the field, flat payout. |
+
+**Max players from any one game** limits how much of the lineup rides on a
+single game (DraftKings itself allows 8). **Don't play my defense against my
+own players** is on by default: a defense scores by holding the other offense
+down, so rostering that offense means the lineup roots against itself.
 
 Tournament settings chase upside and deliberately trade projected points for
 lower ownership. That is right for tournaments and wrong for even-payout
