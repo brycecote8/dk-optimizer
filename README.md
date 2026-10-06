@@ -170,7 +170,7 @@ They're independent. Classic and Showdown each run as tournaments **and** as
 | Winner-take-all (default) | Ceiling | 4 | 2 | 1 | 4 | 5 | Built to finish first. Most weeks it won't. |
 | Top-heavy: small tournament | Ceiling | 2 | 2 | 1 | 3 | 4 | Higher by design. Most entries lose. |
 | Top-heavy: large tournament | Ceiling | 8 | 2 | 1 | 4 | 5 | Highest. Built to look nothing like the crowd. |
-| Even payout: 50/50, double-up | Floor | 0 | 0 | 0 | 2 | 3 | Lower. Beat half the field, flat payout. |
+| Top half advances: 50/50, double-up, survivor round | Floor | 0 | 0 | 0 | 2 | 3 | Lower. Beat half the field, flat payout. |
 
 **Winner-take-all** is for contests where only first place pays. There,
 finishing 15th pays the same as finishing last, so safety is worth nothing and

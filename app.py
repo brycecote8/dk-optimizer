@@ -211,11 +211,12 @@ with st.sidebar:
             note="**Highest risk.** Built to look nothing like the crowd, "
                  "because a common lineup can't win a huge field. Expect to "
                  "lose the large majority of entries."),
-        "Even payout: 50/50 or double-up": dict(
+        "Top half advances: 50/50, double-up, survivor round": dict(
             obj=0, lev=0, stack=0, bb=0, cap=3, team=2, hot=False,
             note="**Lower risk.** Maximises each player's floor, their bad-day "
-                 "score. You only need to beat half the field, and the payout "
-                 "is flat. You'll win smaller and lose far less often."),
+                 "score. Use this whenever finishing in the top half is enough: "
+                 "50/50s, double-ups, and every round of a survivor qualifier. "
+                 "It avoids bad weeks rather than chasing great ones."),
         "Custom": None,
     }
     st.caption("**Payout style** is separate from roster format. Classic and "
