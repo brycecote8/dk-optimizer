@@ -180,8 +180,10 @@ with st.sidebar:
         help="Lower = more different lineups.",
     )
     max_exposure = st.slider(
-        "Max exposure per player (%)", 10, 100, 60,
-        help="No single player appears in more than this share of lineups.",
+        "Max exposure per player (%)", 10, 100, 100,
+        help="No single player appears in more than this share of lineups. "
+             "Only matters if you ENTER many lineups. For a single entry keep "
+             "100%, or the alternatives get forced away from your best players.",
     )
 
     st.header("3. Strategy")
@@ -520,6 +522,15 @@ if generate:
             if source == "Auto-fetch Vegas projections (free)":
                 df = vegas.apply_dst_projections(
                     df, st.session_state.get("game_lines"))
+            # Never roster near-zero players. A player the books expect to do
+            # almost nothing (e.g. a $200 backup with only a long-shot TD line)
+            # can still be "optimal" as a salary dump, but he's a dead roster
+            # spot. Defenses and kickers are exempt; their numbers run lower.
+            MIN_PROJECTION = 3.0
+            dead = (~df["Position"].isin(["DST", "K"])
+                    & (df["Projection"] < MIN_PROJECTION))
+            st.session_state["too_low"] = df.loc[dead, "Name"].tolist()
+            df = df[~dead].reset_index(drop=True)
             df = metrics.enrich(df)   # add Ceiling + Ownership (or estimates)
 
             if showdown:
