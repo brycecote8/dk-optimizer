@@ -25,6 +25,7 @@ import keystore
 import metrics
 import optimizer
 import export
+import nba
 import results
 import vegas
 
@@ -39,9 +40,9 @@ SLOTS = ["QB", "RB", "RB", "WR", "WR", "WR", "TE", "FLEX", "DST"]
 # ---------------------------------------------------------------------------
 # Page setup
 # ---------------------------------------------------------------------------
-st.set_page_config(page_title="DK NFL Optimizer", page_icon="🏈", layout="wide")
+st.set_page_config(page_title="DK Optimizer", page_icon="🏈", layout="wide")
 
-st.title("🏈 DraftKings NFL Lineup Optimizer")
+st.title("🏈🏀 DraftKings Lineup Optimizer")
 st.caption("Upload your files, set your rules, click Generate. Same engine, no typing.")
 
 
@@ -49,13 +50,24 @@ st.caption("Upload your files, set your rules, click Generate. Same engine, no t
 # Sidebar: all the inputs live here so the main area stays for results.
 # ---------------------------------------------------------------------------
 with st.sidebar:
+    sport_choice = st.radio("Sport", ["🏈 NFL", "🏀 NBA"], horizontal=True)
+    sport = "NBA" if "NBA" in sport_choice else "NFL"
+    # Fetched lines and built lineups belong to one sport; switching clears them.
+    if st.session_state.get("active_sport") != sport:
+        for k in ("vegas_rows", "vegas_meta", "game_lines", "gamedays",
+                  "lineups", "df"):
+            st.session_state.pop(k, None)
+        st.session_state["active_sport"] = sport
+    SPORT_KEY = nba.SPORT_KEY if sport == "NBA" else vegas.SPORT
+
     st.header("1. Your data")
 
+    # The built-in sample slate is NFL-only.
     source = st.radio(
         "Where should the players come from?",
-        ["Use sample data (try it now)",
-         "Upload my own files",
-         "Auto-fetch Vegas projections (free)"],
+        (["Use sample data (try it now)"] if sport == "NFL" else [])
+        + ["Upload my own files", "Auto-fetch Vegas projections (free)"],
+        index=0 if sport == "NFL" else 1,
     )
 
     salary_file = None
@@ -99,7 +111,8 @@ with st.sidebar:
                 if remember:
                     keystore.save_key(api_key)
                 try:
-                    groups = vegas.group_by_gameday(vegas.fetch_events(api_key))
+                    groups = vegas.group_by_gameday(
+                        vegas.fetch_events(api_key, sport=SPORT_KEY))
                     st.session_state["gamedays"] = [
                         {"label": lbl, "key": k, "events": evs}
                         for lbl, k, evs in groups[:10]
@@ -117,7 +130,9 @@ with st.sidebar:
             chosen = st.selectbox("Which slate are you playing?", labels,
                                   index=0)
             picked = next(g for g in gamedays if g["label"] == chosen)
-            cost = vegas.estimate_cost(len(picked["events"])) + 2
+            # NBA: 4 markets per game. NFL: 6 per game, plus 2 for game lines.
+            cost = (len(picked["events"]) * len(nba.MARKETS) if sport == "NBA"
+                    else vegas.estimate_cost(len(picked["events"])) + 2)
             st.info(f"Fetching this slate costs **{cost} credits**.")
             with st.expander("Games in this slate"):
                 st.write("\n".join(
@@ -128,12 +143,19 @@ with st.sidebar:
                          width='stretch'):
                 try:
                     with st.spinner("Pulling betting lines from all books..."):
-                        rows, meta = vegas.fetch_projections_for(
-                            api_key, picked["events"])
-                        # Spreads/totals for every game: one call, 2 credits.
-                        # Used to project defenses from their matchup.
-                        lines = vegas.fetch_game_lines(api_key)
-                    meta["credits_used"] = meta.get("credits_used", 0) + 2
+                        if sport == "NBA":
+                            rows, meta = vegas.fetch_projections_for(
+                                api_key, picked["events"],
+                                markets=list(nba.MARKETS), sport=nba.SPORT_KEY,
+                                converter=nba.events_to_projections)
+                            lines = None
+                        else:
+                            rows, meta = vegas.fetch_projections_for(
+                                api_key, picked["events"])
+                            # Spreads/totals for every game: one call, 2
+                            # credits. Projects defenses from their matchup.
+                            lines = vegas.fetch_game_lines(api_key)
+                            meta["credits_used"] = meta.get("credits_used", 0) + 2
                     st.session_state["vegas_rows"] = rows
                     st.session_state["vegas_meta"] = meta
                     st.session_state["game_lines"] = lines
@@ -190,7 +212,7 @@ with st.sidebar:
     contest_format = st.radio(
         "Roster format",
         ["Auto-detect", "Classic (full slate)", "Showdown (single game)"],
-        help="Which roster you fill. Classic = 9 players across many games. "
+        help="Which roster you fill. Classic = a full roster across many games. "
              "Showdown = 6 players from ONE game with a 1.5x Captain. "
              "Auto-detect reads it from your salary file.",
     )
@@ -224,6 +246,21 @@ with st.sidebar:
     st.caption("**Payout style** is separate from roster format. Classic and "
                "Showdown each run as both tournaments and 50/50s — it depends "
                "which contest you enter on DraftKings.")
+    NBA_NOTES = {
+        "Winner-take-all: only 1st place pays":
+            "**Built to finish first, not to cash.** Chases each player's "
+            "best-night score and gives up a few projected points to be less "
+            "popular. Most nights it won't win; it's built for the one it does.",
+        "Top-heavy: small tournament":
+            "**Higher risk by design.** Chases upside with a slight "
+            "contrarian lean. Most entries lose; the point is a big finish.",
+        "Top-heavy: large tournament":
+            "**Highest risk.** Built to look nothing like the crowd. Expect "
+            "to lose the large majority of entries.",
+        "Top half advances: 50/50, double-up, survivor round":
+            "**Lower risk.** Maximises each player's bad-night score. Use it "
+            "whenever finishing in the top half is enough.",
+    }
     preset_name = st.selectbox(
         "Payout style of the contest you're entering", list(PRESETS.keys()),
         help="How the prize money is split, which is what should drive your "
@@ -233,7 +270,8 @@ with st.sidebar:
     P = PRESETS[preset_name]
     locked = P is not None
     if locked:
-        st.caption(P["note"])
+        st.caption(NBA_NOTES.get(preset_name, P["note"]) if sport == "NBA"
+                   else P["note"])
         st.caption("Controls below are set by this contest type. "
                    "Choose **Custom** to change them.")
 
@@ -254,43 +292,50 @@ with st.sidebar:
              "Only useful in tournaments; it costs you points in cash games.",
     )
 
-    stack_size = st.slider(
-        "Stack: QB + this many of his own WR/TE", 0, 3,
-        P["stack"] if locked else 0, disabled=locked,
-        help="Pairs your QB with his own pass-catchers. Raises both upside and "
-             "risk, so it's a tournament tool. 0 = off.",
-    )
-    bring_back = st.slider(
-        "Bring-back: players from the opposing team", 0, 2,
-        P["bb"] if locked else 0, disabled=locked,
-        help="Adds a player from the other side of your QB's game — pays off "
-             "in high-scoring shootouts. 0 = off.",
-    )
-    max_per_game = st.slider(
-        "Max players from any one game", 2, 8,
-        P["cap"] if locked else 5, disabled=locked,
-        help="How much of your lineup rides on a single game. DraftKings "
-             "allows 8. Lower spreads the risk; higher lets you bet big on a "
-             "shootout. Classic only.",
-    )
-    max_per_team = st.slider(
-        "Max players from any one team", 2, 8,
-        P["team"] if locked else 4, disabled=locked,
-        help="How much of your lineup depends on one team's offense. "
-             "Classic only.",
-    )
-    stack_hot = st.checkbox(
-        "Only stack in the 3 highest-scoring games (by Vegas total)",
-        value=P["hot"] if locked else True, disabled=locked,
-        help="A stack only pays off if its game shoots out. This limits your "
-             "QB, and so your stack, to the three games Vegas expects to score "
-             "the most. Needs Vegas projections; Classic only.",
-    )
-    no_dst_conflict = st.checkbox(
-        "Don't play my defense against my own players", value=True,
-        help="A defense scores by holding the other offense down, so rostering "
-             "players from that offense means your lineup roots against itself.",
-    )
+    if sport == "NFL":
+        stack_size = st.slider(
+            "Stack: QB + this many of his own WR/TE", 0, 3,
+            P["stack"] if locked else 0, disabled=locked,
+            help="Pairs your QB with his own pass-catchers. Raises both upside and "
+                 "risk, so it's a tournament tool. 0 = off.",
+        )
+        bring_back = st.slider(
+            "Bring-back: players from the opposing team", 0, 2,
+            P["bb"] if locked else 0, disabled=locked,
+            help="Adds a player from the other side of your QB's game — pays off "
+                 "in high-scoring shootouts. 0 = off.",
+        )
+        max_per_game = st.slider(
+            "Max players from any one game", 2, 8,
+            P["cap"] if locked else 5, disabled=locked,
+            help="How much of your lineup rides on a single game. DraftKings "
+                 "allows 8. Lower spreads the risk; higher lets you bet big on a "
+                 "shootout. Classic only.",
+        )
+        max_per_team = st.slider(
+            "Max players from any one team", 2, 8,
+            P["team"] if locked else 4, disabled=locked,
+            help="How much of your lineup depends on one team's offense. "
+                 "Classic only.",
+        )
+        stack_hot = st.checkbox(
+            "Only stack in the 3 highest-scoring games (by Vegas total)",
+            value=P["hot"] if locked else True, disabled=locked,
+            help="A stack only pays off if its game shoots out. This limits your "
+                 "QB, and so your stack, to the three games Vegas expects to score "
+                 "the most. Needs Vegas projections; Classic only.",
+        )
+        no_dst_conflict = st.checkbox(
+            "Don't play my defense against my own players", value=True,
+            help="A defense scores by holding the other offense down, so rostering "
+                 "players from that offense means your lineup roots against itself.",
+        )
+    else:
+        # Stacks, bring-backs and defense rules are football ideas.
+        stack_size, bring_back, stack_hot, no_dst_conflict = 0, 0, False, False
+        max_per_game, max_per_team = 8, 8
+        st.caption("NBA uses the payout style, upside setting and leverage "
+                   "above. Football stacking controls don't apply.")
 
     generate = st.button("⚡ Generate Lineups", type="primary", width='stretch')
 
@@ -298,13 +343,24 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # Helpers to turn results into nice tables.
 # ---------------------------------------------------------------------------
+def slotted(lineup, df):
+    """(slot, player index) pairs for a Classic lineup, in DraftKings order."""
+    if st.session_state.get("lineup_sport") == "NBA":
+        return list(zip(nba.SLOTS, lineup))      # already in slot order
+    return list(zip(SLOTS, export.assign_slots(lineup, df)))
+
+
+def flex_label():
+    """NBA calls the non-captain Showdown spots UTIL; NFL calls them FLEX."""
+    return "UTIL" if st.session_state.get("lineup_sport") == "NBA" else "FLEX"
+
+
 def build_lineup_table(lineups, df):
     """One row per lineup: the 9 players plus Salary and Projected totals."""
     rows = []
     for n, lineup in enumerate(lineups, start=1):
-        ordered = export.assign_slots(lineup, df)
         row = {"Lineup": n}
-        for slot, i in zip(SLOTS, ordered):
+        for slot, i in slotted(lineup, df):
             # If a slot label repeats (RB, WR), give the column a number.
             col = slot
             k = 2
@@ -326,7 +382,7 @@ def show_entry_card(lineup, df):
     the DraftKings website (single-entry contests, where there's no file to
     upload). Includes a copy-friendly list of just the names.
     """
-    ordered = export.assign_slots(lineup, df)
+    pairs = slotted(lineup, df)
 
     total_salary = int(df.loc[lineup, "Salary"].sum())
     total_proj = round(float(df.loc[lineup, "Projection"].sum()), 1)
@@ -343,7 +399,7 @@ def show_entry_card(lineup, df):
     # A markdown table renders large and clear — easy to read while typing.
     rows = ["| Slot | Player | Team | Salary | Proj |",
             "|---|---|---|---|---|"]
-    for slot, i in zip(SLOTS, ordered):
+    for slot, i in pairs:
         r = df.loc[i]
         rows.append(f"| **{slot}** | **{r['Name']}** | {r['TeamAbbrev']} | "
                     f"${int(r['Salary']):,} | {r['Projection']} |")
@@ -352,7 +408,7 @@ def show_entry_card(lineup, df):
     # st.code gives a one-click copy button in the corner.
     st.caption("Copy-friendly list:")
     st.code("\n".join(f"{slot}: {df.loc[i, 'Name']}"
-                      for slot, i in zip(SLOTS, ordered)), language="text")
+                      for slot, i in pairs), language="text")
 
 
 def sd_players(lu):
@@ -393,12 +449,13 @@ def show_showdown_card(lu, df):
             f"${int(cap['CptSalary']):,} | {round(cap['Projection'] * 1.5, 1)} (1.5x) |"]
     for i in lu["flex"]:
         r = df.loc[i]
-        rows.append(f"| FLEX | **{r['Name']}** | {r['TeamAbbrev']} | "
+        rows.append(f"| {flex_label()} | **{r['Name']}** | {r['TeamAbbrev']} | "
                     f"${int(r['Salary']):,} | {r['Projection']} |")
     st.markdown("\n".join(rows))
 
     st.caption("Copy-friendly list:")
-    lines = [f"CPT: {cap['Name']}"] + [f"FLEX: {df.loc[i, 'Name']}" for i in lu["flex"]]
+    lines = [f"CPT: {cap['Name']}"] + [f"{flex_label()}: {df.loc[i, 'Name']}"
+                                        for i in lu["flex"]]
     st.code("\n".join(lines), language="text")
 
 
@@ -519,7 +576,7 @@ if generate:
 
             df = loader.apply_projections(df, projections_input,
                                           drop_unmatched=drop_inactive)
-            if source == "Auto-fetch Vegas projections (free)":
+            if source == "Auto-fetch Vegas projections (free)" and sport == "NFL":
                 df = vegas.apply_dst_projections(
                     df, st.session_state.get("game_lines"))
             # Never roster near-zero players. A player the books expect to do
@@ -542,6 +599,15 @@ if generate:
                     objective=objective,
                     leverage_budget=leverage,
                     verbose=False,
+                )
+            elif sport == "NBA":
+                lineups = nba.optimize_classic(
+                    df,
+                    num_lineups=num_lineups,
+                    max_shared=max_shared,
+                    max_exposure_pct=max_exposure / 100.0,
+                    objective=objective,
+                    leverage_budget=leverage,
                 )
             else:
                 lines = (st.session_state.get("game_lines")
@@ -571,6 +637,7 @@ if generate:
         st.session_state["lineups"] = lineups
         st.session_state["requested"] = num_lineups
         st.session_state["showdown"] = showdown
+        st.session_state["lineup_sport"] = sport
         st.session_state["settings"] = {
             "objective": objective, "leverage": leverage,
             "stack": stack_size, "bring_back": bring_back,
@@ -613,7 +680,9 @@ if "lineups" in st.session_state:
 
         st.caption("**Showdown / Captain Mode** — 6 players from one game."
                    if showdown else
-                   "**Classic** — 9 players across the slate.")
+                   ("**NBA Classic** — 8 players across the slate."
+                    if st.session_state.get("lineup_sport") == "NBA"
+                    else "**Classic** — 9 players across the slate."))
 
         if len(lineups) < requested:
             st.info(
@@ -660,8 +729,13 @@ if "lineups" in st.session_state:
                     st.write(", ".join(missing[:60]))
 
         # The all-important download button (for bulk entry / NBA later).
-        csv_text = (export.showdown_to_csv_string(lineups, df) if showdown
-                    else export.lineups_to_csv_string(lineups, df))
+        if showdown:
+            csv_text = export.showdown_to_csv_string(lineups, df,
+                                                     flex_label=flex_label())
+        elif st.session_state.get("lineup_sport") == "NBA":
+            csv_text = nba.lineups_to_csv_string(lineups, df)
+        else:
+            csv_text = export.lineups_to_csv_string(lineups, df)
         st.download_button(
             "⬇️ Download DraftKings upload CSV",
             data=csv_text,
@@ -706,7 +780,7 @@ if "lineups" in st.session_state:
                     ordered = [lu["captain"]] + lu["flex"]
                     sal, proj = optimizer.showdown_totals(lu, df)
                 else:
-                    ordered = export.assign_slots(lu, df)
+                    ordered = [i for _, i in slotted(lu, df)]
                     sal = int(df.loc[lu, "Salary"].sum())
                     proj = round(float(df.loc[lu, "Projection"].sum()), 1)
                 own = (round(float(df.loc[ordered, "Ownership"].sum()), 1)
@@ -715,7 +789,8 @@ if "lineups" in st.session_state:
                     [df.loc[i, "Name"] for i in ordered], sal, proj, own,
                     st.session_state.get("settings", {}),
                     slate=slate_label,
-                    fmt="showdown" if showdown else "classic",
+                    fmt=(st.session_state.get("lineup_sport", "NFL").lower() + "-"
+                         + ("showdown" if showdown else "classic")),
                 )
                 st.success(f"Saved as entry #{eid}. Add the real score in "
                            "the **📈 My results** tab after the games.")

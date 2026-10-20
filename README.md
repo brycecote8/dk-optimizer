@@ -65,6 +65,30 @@ a real trade-off — the optimizer solves it rather than just captaining your
 highest-projected player. Stacking and bring-back don't apply in Showdown
 (there's only one game), but ceiling and leverage do.
 
+### NBA (🏀 switch at the top of the sidebar)
+
+Pick **🏀 NBA** at the top of the sidebar. Everything else works the same way:
+upload the DraftKings NBA salary file, check slates, fetch, generate.
+
+| | NBA Classic | NBA Showdown |
+|---|---|---|
+| Roster | PG, SG, SF, PF, C, G, F, UTIL (8) | 1 CPT + 5 UTIL |
+| Salary cap | $50,000 | $50,000, Captain costs 1.5x |
+| Games | 2 or more | 1, both teams |
+
+DraftKings NBA scoring: point +1, made three +0.5, rebound +1.25, assist +1.5,
+steal +2, block +2, turnover −0.5, double-double +1.5, triple-double +3.
+
+Projections come from points, rebounds, assists and threes betting lines
+(4 credits per game). Sportsbooks post steals and blocks for only a handful of
+players, so those, turnovers, and the double-double chance are **estimated**.
+Players with only a points line are projected a little low.
+
+**Credits matter more with NBA.** NBA plays almost every night, and a full
+night of 10+ games costs 40+ credits. NFL alone uses most of the free 500 per
+month, so the free tier covers NBA only on a few nights a month. Use
+**Check slates (free)** to see the cost before every fetch.
+
 ### Auto-fetch Vegas projections (free)
 
 Instead of finding projections yourself, the app can build them from live

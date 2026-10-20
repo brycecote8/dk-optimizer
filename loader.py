@@ -14,6 +14,7 @@ A pandas table is called a "DataFrame".
 """
 
 import re
+import unicodedata
 
 import pandas as pd
 
@@ -23,8 +24,10 @@ _NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 
 def normalize_name(s):
-    """Lowercase, strip punctuation and suffixes so names match more forgivingly."""
-    s = str(s).lower()
+    """Lowercase, strip accents, punctuation and suffixes so names match more
+    forgivingly ("Nikola Jokić" and "Nikola Jokic" become the same)."""
+    s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode()
+    s = s.lower()
     s = re.sub(r"[^a-z0-9 ]", "", s)
     parts = [p for p in s.split() if p not in _NAME_SUFFIXES]
     return " ".join(parts)
@@ -87,11 +90,14 @@ def load_salaries(csv_path):
         df["ID"] = ["NOID-" + str(i) for i in range(len(df))]
     df["ID"] = df["ID"].astype(str).str.strip()
 
-    # Keep only valid DraftKings NFL positions. Kickers only exist in
-    # Showdown (single-game) contests, never in Classic.
-    valid = {"QB", "RB", "WR", "TE", "DST", "K"}
+    # Keep only valid DraftKings positions. NFL: kickers only exist in
+    # Showdown. NBA: dual positions are listed like "PG/SG".
+    nfl = {"QB", "RB", "WR", "TE", "DST", "K"}
+    nba = {"PG", "SG", "SF", "PF", "C"}
+    is_valid = df["Position"].apply(
+        lambda p: p in nfl or all(part in nba for part in p.split("/")))
     before = len(df)
-    df = df[df["Position"].isin(valid)].reset_index(drop=True)
+    df = df[is_valid].reset_index(drop=True)
     dropped = before - len(df)
     if dropped:
         print(f"  (Ignored {dropped} row(s) with non-NFL positions.)")

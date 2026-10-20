@@ -201,17 +201,17 @@ def _get(url):
         raise VegasError(f"Couldn't reach the odds service: {e.reason}")
 
 
-def fetch_events(api_key):
-    """List the upcoming NFL games. Returns a list of event dicts."""
-    url = f"{API_BASE}/sports/{SPORT}/events?apiKey={api_key}"
+def fetch_events(api_key, sport=SPORT):
+    """List upcoming games for a sport (NFL by default). Free: no credits."""
+    url = f"{API_BASE}/sports/{sport}/events?apiKey={api_key}"
     data, _ = _get(url)
     return data
 
 
-def fetch_event_odds(api_key, event_id, markets=None):
+def fetch_event_odds(api_key, event_id, markets=None, sport=SPORT):
     """Get all player-prop odds for a single game."""
     markets = markets or ALL_MARKETS
-    url = (f"{API_BASE}/sports/{SPORT}/events/{event_id}/odds"
+    url = (f"{API_BASE}/sports/{sport}/events/{event_id}/odds"
            f"?apiKey={api_key}&regions=us&oddsFormat=american"
            f"&markets={','.join(markets)}")
     data, headers = _get(url)
@@ -343,7 +343,8 @@ def group_by_gameday(events, now=None):
     return out
 
 
-def fetch_projections_for(api_key, events, markets=None):
+def fetch_projections_for(api_key, events, markets=None, sport=SPORT,
+                          converter=None):
     """
     Fetch props for an EXACT list of games (from group_by_gameday) and convert
     them to projections. This is what the app uses once you've picked a slate,
@@ -355,10 +356,10 @@ def fetch_projections_for(api_key, events, markets=None):
     all_odds = []
     remaining = None
     for ev in events:
-        odds, remaining = fetch_event_odds(api_key, ev["id"], markets)
+        odds, remaining = fetch_event_odds(api_key, ev["id"], markets, sport)
         all_odds.append(odds)
 
-    rows = events_to_projections(all_odds)
+    rows = (converter or events_to_projections)(all_odds)
     meta = {
         "games": len(events),
         "players": len(rows),

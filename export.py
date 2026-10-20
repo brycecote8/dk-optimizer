@@ -90,11 +90,12 @@ def _showdown_cell(row, as_captain=False):
     return f"{row['Name']} ({pid})"
 
 
-def showdown_to_csv_string(lineups, df):
-    """Showdown lineups as a DraftKings-format CSV string."""
+def showdown_to_csv_string(lineups, df, flex_label="FLEX"):
+    """Showdown lineups as a DraftKings-format CSV string. NBA calls the
+    non-captain spots UTIL rather than FLEX."""
     buffer = io.StringIO()
     writer = csv.writer(buffer)
-    writer.writerow(DK_SHOWDOWN_HEADER)
+    writer.writerow(["CPT"] + [flex_label] * 5)
     for lu in lineups:
         cells = [_showdown_cell(df.loc[lu["captain"]], as_captain=True)]
         cells += [_showdown_cell(df.loc[i]) for i in lu["flex"]]
