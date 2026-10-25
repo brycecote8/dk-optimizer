@@ -692,8 +692,11 @@ if "lineups" in st.session_state:
 
         if len(lineups) < requested:
             st.info(
-                f"Built {len(lineups)} of {requested}. The diversity rules ran "
-                "out of room — loosen 'max shared' or raise 'max exposure' for more."
+                f"Built {len(lineups)} of {requested}. There aren't enough good "
+                "players for that many lineups under your limits — common in "
+                "Showdown, where one game has only about 20 usable players. "
+                "Raise 'Max lineups any one player can appear in' (try 4) or "
+                "build fewer lineups."
             )
 
         stack_teams = st.session_state.get("stack_teams")

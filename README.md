@@ -45,6 +45,11 @@ Two settings under **2. Your rules** control how different your lineups are:
 Lineup 1 is always the best lineup; these only change how different the
 others are.
 
+There have to be enough good players to go around. A full Classic slate has
+hundreds, so a limit of 2 works even for 10 lineups. A Showdown has one game
+and only about 20 usable players, so 10 Showdown lineups need a limit of about
+4; at 2, the app builds about 7 and tells you why.
+
 ### Entering one lineup (single-entry contests)
 
 The **🎯 Entry card** tab shows one lineup at a time in a big, readable layout
