@@ -197,16 +197,22 @@ with st.sidebar:
 
     st.header("2. Your rules")
     num_lineups = st.slider("How many lineups?", 1, 150, 5)
+    max_per_player = st.slider(
+        "Max lineups any one player can appear in", 1, 150, 2,
+        help="If you're entering several lineups, this keeps them from all "
+             "leaning on the same QB or star. 2 means no player shows up in "
+             "more than 2 lineups.",
+    )
     max_shared = st.slider(
-        "Max players two lineups can share", 1, 8, 6,
-        help="Lower = more different lineups.",
+        "Max players any two lineups can have in common", 1, 8, 6,
+        help="Compares lineups in pairs. Lineups have 9 players in NFL, 8 in "
+             "NBA Classic and 6 in Showdown; lower means more different.",
     )
-    max_exposure = st.slider(
-        "Max exposure per player (%)", 10, 100, 100,
-        help="No single player appears in more than this share of lineups. "
-             "Only matters if you ENTER many lineups. For a single entry keep "
-             "100%, or the alternatives get forced away from your best players.",
-    )
+    st.caption("Lineup 1 is always the best lineup. These two settings only "
+               "change how different the others are.")
+    # The optimizers take a share of lineups; convert the count (with a hair
+    # of slack so 2 of 10 rounds to exactly 2, not 1).
+    max_exposure = min(100.0, 100.0 * (max_per_player + 0.001) / max(num_lineups, 1))
 
     st.header("3. Strategy")
     contest_format = st.radio(

@@ -14,7 +14,7 @@ Generates optimal DraftKings NFL Classic lineups from a salary CSV and
   - Players from at least 2 different games
 - Keeps the set diverse:
   - No two lineups share more than 6 players
-  - No player appears in more than 60% of lineups (default)
+  - No player appears in more than 2 lineups (default, adjustable)
 - Exports a valid DraftKings bulk-upload CSV.
 
 ## Easiest way: the web app (no typing)
@@ -32,6 +32,18 @@ To stop the app, close the little terminal window that opened alongside it.
 Closing only the browser tab leaves the app running with whatever version it
 started with; the launcher stops any old copy before starting, so
 double-clicking it always gives you the latest version.
+
+### Making several different lineups
+
+Two settings under **2. Your rules** control how different your lineups are:
+
+- **Max lineups any one player can appear in** (default 2). Entering 10
+  lineups with this at 2 means no QB, or anyone else, shows up more than twice.
+- **Max players any two lineups can have in common** (default 6). Compares
+  lineups in pairs, so on its own it still lets every lineup share a QB.
+
+Lineup 1 is always the best lineup; these only change how different the
+others are.
 
 ### Entering one lineup (single-entry contests)
 
