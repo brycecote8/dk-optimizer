@@ -99,10 +99,28 @@ def stats_to_range(stats):
             + TURNOVERS_FULL * usage * TURNOVER
             + DOUBLE_DOUBLE * p_dd + TRIPLE_DOUBLE * p_td)
 
-    # Basketball is steadier night to night than football (lots of
-    # possessions, no all-or-nothing touchdowns), so the range is narrower.
-    # These two multipliers are estimates, not measured.
-    return round(0.70 * mean, 2), round(mean, 2), round(1.40 * mean, 2)
+    return range_from_mean(mean)
+
+
+# How much a player's night-to-night score swings. Counting stats (points,
+# rebounds, assists) spread out with the SQUARE ROOT of the average, not in
+# proportion to it: a 50-point star typically lands 40-60, while a 15-point
+# bench player can score 5 or 30. So cheaper, lower-minute players carry more
+# upside (and more risk) relative to their projection. The 1.35 scale is an
+# estimate that puts a 50-point star's typical swing near 10 points.
+SWING = 1.35
+
+
+def range_from_mean(mean):
+    """(floor, mean, ceiling): roughly a bad night, typical, and a 1-in-10 night."""
+    sd = SWING * math.sqrt(max(mean, 0.0))
+    return (round(max(0.0, mean - sd), 2), round(mean, 2),
+            round(mean + 1.28 * sd, 2))
+
+
+def is_nba_position(position):
+    return all(p in ("PG", "SG", "SF", "PF", "C")
+               for p in str(position).upper().split("/"))
 
 
 def events_to_projections(events):

@@ -290,9 +290,20 @@ with st.sidebar:
     )
     objective = {0: "floor", 1: "mean", 2: "ceiling"}[OBJECTIVES.index(contest_type)]
 
+    # NBA lineups score about 315 vs about 140 in NFL, so the same "points to
+    # give up" is a much smaller nudge. These match NFL's push in relative
+    # terms (small tournament: about 1.5% of the lineup's projection).
+    NBA_LEV = {
+        "Winner-take-all: only 1st place pays": 9,
+        "Top-heavy: small tournament": 5,
+        "Top-heavy: large tournament": 18,
+        "Top half advances: 50/50, double-up, survivor round": 0,
+    }
+    lev_default = (NBA_LEV.get(preset_name, P["lev"]) if sport == "NBA"
+                   else P["lev"]) if locked else 0
     leverage = st.slider(
-        "Leverage — projected points to give up for uniqueness", 0, 20,
-        P["lev"] if locked else 0, disabled=locked,
+        "Leverage — projected points to give up for uniqueness", 0, 40,
+        lev_default, disabled=locked,
         help="The optimizer finds the best lineup, then the least-popular "
              "lineup within this many points of it. 0 = just the best lineup. "
              "Only useful in tournaments; it costs you points in cash games.",

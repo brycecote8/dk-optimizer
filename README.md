@@ -101,6 +101,20 @@ Projections come from points, rebounds, assists and threes betting lines
 players, so those, turnovers, and the double-double chance are **estimated**.
 Players with only a points line are projected a little low.
 
+**Upside and floor in NBA.** Counting stats swing with the square root of a
+player's average, so a 50-point star typically lands 40-60 while a 15-point
+bench player can score 5 or 30. Cheaper players therefore carry more upside
+relative to their projection, and "Ceiling" leans toward them. On many slates
+the top lineup is the same either way; the setting matters at the margins.
+
+**Leverage is scaled for NBA.** NBA lineups project around 315 points versus
+about 140 in NFL, so the NBA presets give up proportionally more points to be
+different: 5 for a small tournament, 18 for a large one, 9 for winner-take-all.
+
+**For contests that pay many places** (not just first), use the Top-heavy
+small or large tournament setting depending on field size, not
+winner-take-all.
+
 **Credits matter more with NBA.** NBA plays almost every night, and a full
 night of 10+ games costs 40+ credits. NFL alone uses most of the free 500 per
 month, so the free tier covers NBA only on a few nights a month. Use

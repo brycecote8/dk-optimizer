@@ -48,8 +48,23 @@ def ensure_ceiling(df):
 
 
 def _estimate_ceiling(row):
+    if _is_nba(row["Position"]):
+        import nba
+        return nba.range_from_mean(float(row["Projection"]))[2]
     mult = CEILING_MULTIPLIER.get(row["Position"], 1.4)
     return round(float(row["Projection"]) * mult, 1)
+
+
+def _is_nba(position):
+    return all(p in ("PG", "SG", "SF", "PF", "C")
+               for p in str(position).upper().split("/"))
+
+
+def _estimate_floor(row):
+    if _is_nba(row["Position"]):
+        import nba
+        return nba.range_from_mean(float(row["Projection"]))[0]
+    return round(float(row["Projection"]) * 0.60, 1)
 
 
 def ensure_floor(df):
@@ -61,9 +76,9 @@ def ensure_floor(df):
     df = df.copy()
     if "Floor" in df.columns and df["Floor"].notna().any():
         df["Floor"] = pd.to_numeric(df["Floor"], errors="coerce")
-        df["Floor"] = df["Floor"].fillna((df["Projection"] * 0.60).round(1))
+        df["Floor"] = df["Floor"].fillna(df.apply(_estimate_floor, axis=1))
         return df
-    df["Floor"] = (df["Projection"] * 0.60).round(1)
+    df["Floor"] = df.apply(_estimate_floor, axis=1)
     return df
 
 
